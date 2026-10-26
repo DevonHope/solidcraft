@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::tolerance::{DimensionWarning, Frame, Indicator, Repeat, Role, Tolerance, TolerancePresentation, ToleranceText};
 use crate::{DocError, Result, expr};
 
 /// Units per millimetre and the unit's name. Unknown names use millimetres.
@@ -177,6 +178,166 @@ fn grouped_digits(text: &mut String, digits: &str, integer: bool, groups: bool) 
         }
         text.push(digit);
     }
+}
+
+/// The unrounded measurement and semantic annotations of one dimension.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DimensionValue {
+    pub nominal: f64,
+    pub kind: expr::Kind,
+    pub tolerance: Tolerance,
+    pub presentation: TolerancePresentation,
+    pub role: Role,
+    pub indicator: Option<Indicator>,
+    pub count: u32,
+    pub not_to_scale: bool,
+}
+
+/// Drawing-owned presentation; independent of the user's UI locale.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DimensionStyle {
+    pub unit: String,
+    pub number: NumberFormat,
+    pub decimals: u8,
+    pub tolerance_decimals: u8,
+    pub repeat: Repeat,
+}
+
+/// Typed runs and layout metadata, with a single-line form for headless consumers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DimensionText {
+    pub count: Option<String>,
+    pub indicator: Option<String>,
+    pub nominal: String,
+    pub tolerance: ToleranceText,
+    pub frame: Frame,
+    pub underline: bool,
+    pub warnings: Vec<DimensionWarning>,
+}
+
+impl DimensionText {
+    /// Keep the nominal even for limits; boxes and underlines remain layout metadata.
+    pub fn plain(&self) -> String {
+        let mut text = String::new();
+        if self.frame == Frame::Parentheses {
+            text.push('(');
+        }
+        if let Some(count) = &self.count {
+            text.push_str(count);
+        }
+        if let Some(indicator) = &self.indicator {
+            text.push_str(indicator);
+        }
+        text.push_str(&self.nominal);
+        match &self.tolerance {
+            ToleranceText::None => {}
+            ToleranceText::Symmetric(t) | ToleranceText::Code(t) => {
+                text.push(' ');
+                text.push_str(t);
+            }
+            ToleranceText::Stacked { upper, lower } => {
+                text.push(' ');
+                text.push_str(upper);
+                text.push('/');
+                text.push_str(lower);
+            }
+        }
+        if self.frame == Frame::Parentheses {
+            text.push(')');
+        }
+        text
+    }
+}
+
+/// Format a dimension without changing its value or dropping incompatible annotations.
+pub fn format_dimension(value: &DimensionValue, style: &DimensionStyle) -> Result<DimensionText> {
+    if !value.nominal.is_finite() {
+        return Err(DocError::Invalid("dimension nominal must be finite".into()));
+    }
+    if style.decimals > 8 {
+        return Err(DocError::Invalid("dimension decimals must be at most 8".into()));
+    }
+    if style.tolerance_decimals > 8 {
+        return Err(DocError::Invalid("dimension tolerance_decimals must be at most 8".into()));
+    }
+    if !(1..=10_000).contains(&value.count) {
+        return Err(DocError::Invalid("dimension count must be between 1 and 10000".into()));
+    }
+    if value.role != Role::Normal && !matches!(&value.tolerance, Tolerance::None) {
+        return Err(DocError::Invalid("auxiliary and exact dimension roles cannot have a tolerance".into()));
+    }
+    value.tolerance.validate()?;
+    let shown = format_value(value.nominal, value.kind, &style.unit, style.decimals, &style.number)?;
+    let tolerance = match &value.tolerance {
+        Tolerance::None => ToleranceText::None,
+        Tolerance::Fit { class } => ToleranceText::Code(class.clone()),
+        t if value.presentation == TolerancePresentation::Limits => {
+            let (upper, lower) = t.deviations().ok_or_else(|| DocError::Invalid("limits require numeric deviations".into()))?;
+            ToleranceText::Stacked {
+                upper: format_value(value.nominal + upper, value.kind, &style.unit, style.tolerance_decimals, &style.number)?.text,
+                lower: format_value(value.nominal + lower, value.kind, &style.unit, style.tolerance_decimals, &style.number)?.text,
+            }
+        }
+        Tolerance::Symmetric { deviation } => {
+            let d = dimension_deviation(*deviation, value.kind, style)?;
+            ToleranceText::Symmetric(format!("±{}", d.text))
+        }
+        Tolerance::Deviations { upper, lower } => {
+            ToleranceText::Stacked { upper: signed_deviation(*upper, value.kind, style)?, lower: signed_deviation(*lower, value.kind, style)? }
+        }
+    };
+    let mut warnings = Vec::new();
+    if let Some((upper, lower)) = value.tolerance.deviations() {
+        // Shown.value is in display units. Centre the interval on the shown nominal,
+        // in internal units. Compare endpoints directly: subtracting the nominal can
+        // manufacture an outside offset at an inclusive decimal boundary (1.1 - 1).
+        let (_, scale) = expr::unit_info(&style.unit).ok_or_else(|| DocError::Invalid("unknown number display unit".into()))?;
+        let centre = shown.value * scale;
+        if !(centre + lower..=centre + upper).contains(&value.nominal) {
+            warnings.push(DimensionWarning::RoundingOutsideTolerance);
+        }
+    }
+    Ok(DimensionText {
+        count: (value.count > 1).then(|| {
+            let repeat = match style.repeat {
+                Repeat::Times => '×',
+                Repeat::X => 'X',
+            };
+            format!("{}{repeat} ", value.count)
+        }),
+        indicator: value.indicator.map(|i| {
+            match i {
+                Indicator::Diameter => "Ø",
+                Indicator::Radius => "R",
+                Indicator::Square => "□",
+                Indicator::SphericalDiameter => "SØ",
+                Indicator::SphericalRadius => "SR",
+            }
+            .into()
+        }),
+        nominal: shown.text,
+        tolerance,
+        frame: match value.role {
+            Role::Normal => Frame::None,
+            Role::Auxiliary => Frame::Parentheses,
+            Role::Exact => Frame::Box,
+        },
+        underline: value.not_to_scale,
+        warnings,
+    })
+}
+
+fn dimension_deviation(deviation: f64, kind: expr::Kind, style: &DimensionStyle) -> Result<Shown> {
+    let mut shown = format_value(deviation, kind, &style.unit, style.tolerance_decimals, &style.number)?;
+    if shown.value == 0.0 {
+        shown.text = "0".into();
+    }
+    Ok(shown)
+}
+
+fn signed_deviation(deviation: f64, kind: expr::Kind, style: &DimensionStyle) -> Result<String> {
+    let shown = dimension_deviation(deviation, kind, style)?;
+    Ok(if shown.value > 0.0 { format!("+{}", shown.text) } else { shown.text })
 }
 
 #[cfg(test)]
