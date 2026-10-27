@@ -6,6 +6,8 @@
 //! each may be set (the design, a component or both), how its value is checked and its label.
 //! It keeps every other key exactly as it was through open, edit and save. Other tools keep
 //! their own data under one reverse-DNS key each (`com.example.tool`), holding an object.
+//! A component's part properties have one more key, outside the table: its bill of materials
+//! type (`bom_type`).
 //!
 //! Reading never validates: a well-known key holding something other than text is kept as it
 //! is and reads as absent, so a file another tool wrote always opens. Writing through
@@ -20,7 +22,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::{DocError, Result};
+use crate::{BomType, DocError, Result};
 
 pub const PROJECT: &str = "project";
 pub const PART_NUMBER: &str = "part_number";
@@ -92,6 +94,11 @@ pub static KEYS: &[Key] = &[
 /// own, and the Bill of Materials window edits them.
 pub static BOM_KEYS: &[&str] = &[PART_NUMBER, DESCRIPTION, REVISION];
 
+/// A component's [`BomType`] in the bill of materials (one of [`BomType::as_str`]'s words). It is
+/// a part property of a component, not of the design, so it isn't a row of [`KEYS`] and the Design
+/// Properties dialog doesn't list it.
+pub const BOM_TYPE: &str = "bom_type";
+
 /// Longest key, in bytes.
 pub const MAX_KEY_BYTES: usize = 128;
 /// Longest well-known text value, in bytes.
@@ -126,7 +133,7 @@ pub fn key(name: &str) -> Option<&'static Key> {
 
 /// A key SolidCraft reads as a design or part property.
 pub fn is_well_known(name: &str) -> bool {
-    key(name).is_some()
+    key(name).is_some() || name == BOM_TYPE
 }
 
 /// A reverse-DNS key another tool keeps its data under: two or more dot-separated labels of
@@ -160,6 +167,21 @@ fn text(key: &str, value: Value) -> Result<Option<Value>> {
         }
         _ => Err(invalid(format!("`{key}` takes text"))),
     }
+}
+
+/// [`BOM_TYPE`]'s check: a component's part property only, one of [`BomType::as_str`]'s words;
+/// empty text (like `null`) removes it, which reads as [`BomType::Normal`].
+fn bom_type(owner: Owner, value: Value) -> Result<Option<Value>> {
+    if owner != Owner::Component {
+        return Err(invalid(format!("`{BOM_TYPE}` is a component's part property: set it with component.metadata.set")));
+    }
+    let Some(Value::String(s)) = text(BOM_TYPE, value)? else { return Ok(None) };
+    if BomType::parse(&s).is_none() {
+        let shown: String = s.chars().take(64).collect();
+        let words: Vec<&str> = BomType::ALL.iter().map(|t| t.as_str()).collect();
+        return Err(invalid(format!("`{BOM_TYPE}` is one of {}, not `{shown}`", words.join(", "))));
+    }
+    Ok(Some(Value::String(s)))
 }
 
 fn depth(v: &Value) -> usize {
@@ -223,6 +245,11 @@ impl Metadata {
     pub fn license(&self) -> Option<&str> {
         self.text(LICENSE)
     }
+    /// The component's bill of materials type: normal when the key is missing, or holds a word
+    /// this build doesn't know (a newer SolidCraft's type reads as normal and is kept as it is).
+    pub fn bom_type(&self) -> BomType {
+        self.text(BOM_TYPE).and_then(BomType::parse).unwrap_or_default()
+    }
 
     /// The keys SolidCraft doesn't read (other tools' data, or keys a newer SolidCraft added),
     /// kept as they are.
@@ -260,6 +287,9 @@ impl Metadata {
 
 /// `value` as `key` may hold it in `owner`'s metadata (`None`: remove the key), or why it can't.
 fn check(owner: Owner, key: &str, value: Value) -> Result<Option<Value>> {
+    if key == BOM_TYPE {
+        return bom_type(owner, value);
+    }
     if let Some(k) = self::key(key).filter(|k| k.scope.covers(owner)) {
         return (k.check)(key, value);
     }
@@ -331,6 +361,31 @@ mod tests {
         assert!(m.set(Design, "com.acme.tool", Value::Null).unwrap());
         assert!(!m.set(Design, "com.acme.tool", Value::Null).unwrap());
         assert_eq!(m.0.keys().collect::<Vec<_>>(), ["description"]);
+    }
+
+    #[test]
+    fn a_bom_type_takes_one_of_its_words_and_reads_as_normal_otherwise() {
+        let mut m = Metadata::default();
+        assert_eq!(m.bom_type(), BomType::Normal, "no key: normal");
+        for t in BomType::ALL {
+            assert!(m.set(Component, BOM_TYPE, json!(t.as_str())).is_ok(), "{t:?}");
+            assert_eq!(m.bom_type(), t);
+            assert_eq!(BomType::parse(t.as_str()), Some(t));
+        }
+        for bad in [json!("Phantom"), json!("kit"), json!(" phantom"), json!(1), json!({"type": "phantom"}), json!("a\u{7}")] {
+            assert!(m.set(Component, BOM_TYPE, bad.clone()).is_err(), "{bad}");
+        }
+        assert_eq!(m.bom_type(), BomType::Inseparable, "a refused value leaves the old one");
+        assert!(m.set(Component, BOM_TYPE, json!("")).unwrap(), "empty text removes it");
+        assert_eq!(m.bom_type(), BomType::Normal);
+        assert!(m.others().next().is_none(), "SolidCraft reads it, so it isn't another tool's key");
+        // A word a newer build wrote is kept as it is and reads as normal here.
+        let newer: Metadata = serde_json::from_value(json!({"bom_type": "kit"})).unwrap();
+        assert_eq!(newer.bom_type(), BomType::Normal);
+        assert_eq!(newer.get(BOM_TYPE), Some(&json!("kit")));
+        assert!(!keys(Design).any(|k| k.name == BOM_TYPE), "the Design Properties dialog doesn't list it");
+        let refused = Metadata::default().set(Design, BOM_TYPE, json!("phantom")).unwrap_err().to_string();
+        assert!(refused.contains("a component's part property"), "only a component takes one: {refused}");
     }
 
     #[test]
