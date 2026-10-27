@@ -21,10 +21,10 @@ Times in the log are local time on the machine that did the work, with the UTC o
 | **Last updated** | 2026-10-27 afternoon, on the Mac (machine B, see [Machines](#machines)) |
 | **Branch** | `beta/drawings`: **b0f2a86e**. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
-| **Pushed?** | **Only as far as 98bd4a46.** The four merges after it (#7316, #6482, #7430, #3891), the regression test and these notes are **on the Mac only** and need the owner's OK under §5. A laptop that pulls today gets the drawings base and nothing else. |
+| **Pushed?** | **Yes**, the whole branch, to the fork as `origin/beta/drawings` (DevonHope/solidcraft), on 2026-10-27 with the owner's OK. Another machine gets everything with `git pull` (§3). **Agents: confirm with the owner before each later push.** |
 | **Phase** | **Phase 1 of 6 (integration base): all but #5867 merged.** |
 | **Running** | Nothing. |
-| **Next action** | Merge #5867 (cce39b40), adapting its 3-argument `checked!` call site to `main`'s 2-argument macro, then write the contracts the 10 new `drawing.*` commands lack ([§6.6](#66-contracts-owed)). |
+| **Next action** | **Re-fetch #5867's head first**: it was force-pushed once on 2026-10-27 (its old head 5bb34f49 no longer exists) and last changed at 10:42 UTC, so compare it with §8.7 before merging. Then merge it, adapt its 3-argument `checked!` call site to `main`'s 2-argument macro, and write the contracts the 10 new `drawing.*` commands lack ([§6.6](#66-contracts-owed)). |
 | **Blockers** | None. |
 
 ---
@@ -135,7 +135,7 @@ git switch beta/drawings
 | Name | What it is | Notes |
 |---|---|---|
 | **A: laptop** | Windows 11 Home, 16 threads; user folder `C:\Users\D`; repo at `C:\Users\D\Documents\PROJECTS\3D\Software\solidcraft` | Everyday machine, so **keep builds light** (§5). The installed release 0.24.0 is in `C:\Program Files\SolidCraft`: never touch it. Git 2.47, Rust 1.99.1, `gh` signed in as DevonHope. |
-| **B: Mac** | macOS 27.0.1 (Darwin 27.0.0), Apple silicon, 14 cores, 48 GB; repo at `~/dev/solidcraft`, trial worktree at `~/dev/sc-trial` | Added 2026-10-27. Rust 1.99.1 + wasm32, git 2.55, `gh` signed in as DevonHope. **The NAS copy at `~/Library/CloudStorage/SynologyDrive-Software/solidcraft` is not a git repo** and must not be built in: Synology filters dot-folders, so `.git` never arrives. Builds use `CARGO_BUILD_JOBS=8`. A clean `cargo build -p solidcraft` takes **3 m 55 s**. |
+| **B: Mac** | macOS 27.0.1 (Darwin 27.0.0), Apple silicon, 14 cores, 48 GB; repo at `~/dev/solidcraft`, trial worktree at `~/dev/sc-trial` | Added 2026-10-27. Rust 1.99.1 + wasm32, git 2.55, `gh` signed in as DevonHope. **The NAS copy at `~/Library/CloudStorage/SynologyDrive-Software/solidcraft` is not a git repo** and must not be built in: Synology filters dot-folders, so `.git` never arrives. Builds use `CARGO_BUILD_JOBS=8`. A clean `cargo build -p solidcraft` takes **3 m 55 s**; an incremental relink about 5 m 30 s at 2 jobs. A dev build of **26140353** is at `~/dev/solidcraft/target/debug/solidcraft`; launch it with the Bash lines in [Appendix A](#appendix-a-launchers), which read `SOLIDCRAFT_SETTINGS_DIR`, `SOLIDCRAFT_RECOVERY_DIR`, `SOLIDCRAFT_CONTROL_DIR` and `SOLIDCRAFT_UPDATE_CHECK`. |
 
 ---
 
