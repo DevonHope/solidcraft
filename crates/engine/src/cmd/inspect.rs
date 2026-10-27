@@ -56,8 +56,8 @@ pub static COMMANDS: &[CommandSpec] = &[
         .noundo()
         .doc_only()
         .params("→ built-in and design-owned materials (user: true, look, optional physical_card/physical_validation/density_comparison). Read-only; candidate engineering records do not certify sources or supply a solver"),
-    CommandSpec::new("engine.commands", "List Commands", commands).icon("list").noundo(),
-    CommandSpec::new("engine.describe", "Describe Command", crate::checked!("engine.describe", describe))
+    CommandSpec::new("engine.commands", "List Commands", commands).any_part().icon("list").noundo(),
+    CommandSpec::new("engine.describe", "Describe Command", crate::checked!("engine.describe", describe)).any_part()
         .icon("list")
         .noundo()
         .doc_only()
