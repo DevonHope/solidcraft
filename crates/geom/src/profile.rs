@@ -58,6 +58,67 @@ pub const MAX_BEZIER_CTRL: usize = MAX_BEZIER_DEGREE + 1;
 /// continuity order a blend curve can be built for (4 = G4).
 pub const MAX_DERIVATIVE_ORDER: usize = 4;
 
+/// How a map of the plane that keeps shapes moves an arc ([`Seg2::mapped`]): it turns it by `angle`
+/// after mirroring it across the x axis when `mirrored`, and scales its radius by `scale`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ArcMap {
+    pub angle: f64,
+    pub mirrored: bool,
+    pub scale: f64,
+}
+
+impl ArcMap {
+    /// A turn by `angle`, after a mirror when `mirrored`, that keeps lengths.
+    pub const fn turn(angle: f64, mirrored: bool) -> ArcMap {
+        ArcMap { angle, mirrored, scale: 1.0 }
+    }
+
+    /// The arc map of `f`, a map of points that keeps lengths (a turn, a mirror and a shift), as
+    /// its images of the origin and the unit axes give it: the x axis's angle, and whether the
+    /// axes come out reversed. Its scale is 1, never a measured length.
+    pub fn rigid(f: impl Fn(Vec2) -> Vec2) -> ArcMap {
+        let o = f(Vec2::ZERO);
+        let (ax, ay) = (f(Vec2::new(1.0, 0.0)) - o, f(Vec2::new(0.0, 1.0)) - o);
+        ArcMap::turn(ax.y.atan2(ax.x), ax.cross(ay) < 0.0)
+    }
+}
+
+/// A similarity of the plane: a point is scaled by `scale` (above 0) about the origin, turned
+/// `angle` radians counter-clockwise, then moved by `shift`. It keeps shapes and the direction
+/// curves turn in, so an arc stays an arc ([`Seg2::similar`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Similarity2 {
+    scale: f64,
+    angle: f64,
+    shift: Vec2,
+    /// The angle's cosine and sine times the scale, worked out once rather than per point.
+    cos: f64,
+    sin: f64,
+}
+
+impl Similarity2 {
+    /// `None` unless `scale` is finite and above 0 and `angle` and `shift` are finite.
+    pub fn new(scale: f64, angle: f64, shift: Vec2) -> Option<Similarity2> {
+        if !(scale.is_finite() && scale > 0.0 && angle.is_finite() && shift.is_finite()) {
+            return None;
+        }
+        let (sin, cos) = angle.sin_cos();
+        Some(Similarity2 { scale, angle, shift, cos: cos * scale, sin: sin * scale })
+    }
+
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
+
+    pub fn angle(&self) -> f64 {
+        self.angle
+    }
+
+    pub fn apply(&self, p: Vec2) -> Vec2 {
+        Vec2::new(self.cos * p.x - self.sin * p.y, self.sin * p.x + self.cos * p.y) + self.shift
+    }
+}
+
 /// A Bézier segment over `pts` (2…[`MAX_BEZIER_CTRL`] points): a line, a cubic or a higher-degree
 /// piece. A quadratic becomes a conic of weight 1.
 pub fn bezier(pts: &[Vec2]) -> Option<Seg2> {
@@ -372,6 +433,38 @@ impl Seg2 {
                 q[..=k].reverse();
                 Seg2::Bezier { n, p: q }
             }
+        }
+    }
+    /// The segment with each control point mapped by `f`: exact for any affine map of lines,
+    /// Béziers and conics. An arc is returned as it is, so callers go through [`Seg2::mapped`].
+    fn map_controls(&self, f: impl Fn(Vec2) -> Vec2) -> Seg2 {
+        match *self {
+            Seg2::Line { a, b } => Seg2::Line { a: f(a), b: f(b) },
+            Seg2::Cubic { p0, p1, p2, p3 } => Seg2::Cubic { p0: f(p0), p1: f(p1), p2: f(p2), p3: f(p3) },
+            Seg2::Conic { a, apex, b, w } => Seg2::Conic { a: f(a), apex: f(apex), b: f(b), w },
+            Seg2::Bezier { n, mut p } => {
+                p.iter_mut().take(usize::from(n) + 1).for_each(|q| *q = f(*q));
+                Seg2::Bezier { n, p }
+            }
+            arc @ Seg2::Arc { .. } => arc,
+        }
+    }
+    /// The segment moved by the similarity `m`, exactly ([`Seg2::mapped`]).
+    pub fn similar(&self, m: &Similarity2) -> Seg2 {
+        self.mapped(|p| m.apply(p), ArcMap { angle: m.angle(), mirrored: false, scale: m.scale() })
+    }
+    /// The segment under a map of the plane that keeps shapes: `f` moves its points (an arc's centre
+    /// and every control point), and `arc` says how it turns an arc (start `angle - start` and the
+    /// sweep reversed when mirrored, `angle + start` otherwise; the radius scaled). Points go
+    /// through `f` itself, so a map exact on points stays exact.
+    pub fn mapped(&self, f: impl Fn(Vec2) -> Vec2, arc: ArcMap) -> Seg2 {
+        let ArcMap { angle, mirrored, scale } = arc;
+        match *self {
+            Seg2::Arc { center, radius, start, sweep } => {
+                let (start, sweep) = if mirrored { (angle - start, -sweep) } else { (angle + start, sweep) };
+                Seg2::Arc { center: f(center), radius: radius * scale, start, sweep }
+            }
+            _ => self.map_controls(f),
         }
     }
     pub fn length(&self) -> f64 {
