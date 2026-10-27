@@ -18,14 +18,14 @@ Times in the log are local time on the machine that did the work, with the UTC o
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-27, on the laptop (machine A, see [Machines](#machines)) |
-| **Branch** | `beta/drawings`: eaac419a, plus the commit that adds this file. It tracks `origin/beta/drawings`. |
+| **Last updated** | 2026-10-27 midday, on the Mac (machine B, see [Machines](#machines)) |
+| **Branch** | `beta/drawings`: **b6312c4a**, the merge of the new `upstream/drawings` ebafe074, plus the commit that updates this file. |
 | **Working tree** | Clean, with no merge in progress. |
-| **Pushed?** | **Yes**, to the fork as `origin/beta/drawings` (DevonHope/solidcraft), on 2026-10-27 with the owner's OK. |
-| **Phase** | **Phase 1 of 6 (integration base), partly done.** Phase 0 is done, except for parts of the baseline that were skipped on purpose. |
-| **Running** | Nothing: no cargo, rustc or dev app. |
-| **Next action** | Merge PR #5867 into `beta/drawings` and resolve 15 conflict regions in 10 files ([§6.1](#61-merge-5867-drawingviewsnapshot-v2-which-includes-3877)). |
-| **Blockers** | None. Another machine gets the branch from the fork (§3). |
+| **Pushed?** | **No.** `origin/beta/drawings` is still 88f65b4d. The Mac's commits need the owner's OK before they go up (§5). |
+| **Phase** | **Phase 1 of 6 (integration base), partly done.** The base is now the current `upstream/drawings`. |
+| **Running** | Nothing. |
+| **Next action** | The owner decides on #3891 ([§6.2](#62-decide-3891-the-owners-call)). Three gates are still owed on the merge: the engine targeted tests, `clippy -D warnings` and `cargo check -p solidcraft`. |
+| **Blockers** | The owner's decision on the drawing storage model, and **machine B's build limits** (see the caps note in [§5](#5-working-rules-agreed-with-the-owner)). |
 
 ---
 
@@ -58,12 +58,21 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` not started.
   - `solidcraft-io`: 67;
   - `solidcraft-engine`, filtered to bom and metadata: 36.
 - [x] fmt, lists and skills pass.
-- [ ] **Merge #5867** (5bb34f49, which contains #3877). This is the next step. It was tried once and backed out.
-- [ ] Merge #7430 (4063a536, which contains #7255).
-- [ ] Cherry-pick or merge #6482 (2c084c49, `mesh_lines`).
+- [x] **Merged the new `upstream/drawings` (ebafe074)** on machine B, 2026-10-27. This replaced
+  "merge #5867 for #3877": upstream merged **#4817, #3877 and #2457** into the drawings branch
+  overnight, so taking the branch brings all three ([§6.1](#61-merge-the-new-upstreamdrawings-done)).
+  24 conflict regions in 7 files, all from this branch holding #4817's older head.
+- [x] `cargo build -p solidcraft` on macOS: clean, 3 m 55 s. fmt, lists and skills pass.
+- [ ] **Decide the drawing storage model** before #3891 ([§6.2](#62-decide-3891-the-owners-call)). Upstream
+  dropped the separate drawing file; the beta's D1 and item 6 assume `.scdwg`.
+- [ ] Merge #7316's new head (1403e678): the rebased ArcMap commit, independent of the decision.
+- [ ] Merge #3891 (36cf48a3) and #5867 (cce39b40), **or** hold to the plan and write Phase 2 by hand.
+- [ ] Merge #7430 (1aaff713, dashes and PNG). Independent: stacked on `drawings`, not on #3891.
+- [ ] Cherry-pick or merge #6482 (2c084c49, `mesh_lines`). Independent: its base is `main`.
 - [ ] Merge #6788 (c70ec84e, tolerance text). Optional.
-- [ ] Fix the `checked!` macro mismatch: it takes 3 arguments on the drawings side (#5867) and 2 on `main`.
-- [ ] Run `cargo build -p solidcraft`, then the targeted geom, doc, io and engine tests ([§6.5](#65-close-out-phase-1)).
+- [ ] Fix the `checked!` macro mismatch when #5867 lands: `main`'s macro at
+  `crates/engine/src/schema/mod.rs:69` takes **2** arguments (`$id:literal, $handler:path`);
+  #5867's call sites pass 3. Adapt the call sites, not the macro.
 - [ ] Launch-check the dev app, take a screenshot over the control channel, then close the app.
 - [ ] Record the base in `BETA-BASE.md`: every merged SHA, in order.
 
@@ -120,7 +129,7 @@ git switch beta/drawings
 | Name | What it is | Notes |
 |---|---|---|
 | **A: laptop** | Windows 11 Home, 16 threads; user folder `C:\Users\D`; repo at `C:\Users\D\Documents\PROJECTS\3D\Software\solidcraft` | Everyday machine, so **keep builds light** (§5). The installed release 0.24.0 is in `C:\Program Files\SolidCraft`: never touch it. Git 2.47, Rust 1.99.1, `gh` signed in as DevonHope. |
-| **B** | *(fill in on first use)* | |
+| **B: Mac** | macOS 27.0.1 (Darwin 27.0.0), Apple silicon, 14 cores, 48 GB; repo at `~/dev/solidcraft`, trial worktree at `~/dev/sc-trial` | Added 2026-10-27. Rust 1.99.1 + wasm32, git 2.55, `gh` signed in as DevonHope. **The NAS copy at `~/Library/CloudStorage/SynologyDrive-Software/solidcraft` is not a git repo** and must not be built in: Synology filters dot-folders, so `.git` never arrives. Builds use `CARGO_BUILD_JOBS=8`. A clean `cargo build -p solidcraft` takes **3 m 55 s**. |
 
 ---
 
@@ -168,6 +177,18 @@ git switch beta/drawings
   - targeted tests only (`cargo test -p <crate> <filter>`), never `cargo xtask test` or the full `cargo xtask ci` unless the owner asks;
   - close the dev app as soon as a check is done.
   - A stronger machine B can relax this if the owner agrees. Note it in the log.
+- **Machine B (the Mac) crashed once at 8 jobs. Use 2.** On 2026-10-27, `CARGO_BUILD_JOBS=8` with
+  `RUST_TEST_THREADS=4` **rebooted the Mac** during the engine test build and clippy.
+  **The cause is not confirmed.** The same 8 jobs had already built `-p solidcraft` cleanly in
+  3 m 55 s and run the geom, doc and io tests, so raw RAM is not the obvious answer. What was also
+  true at the time: the shared `CARGO_TARGET_DIR` had grown to **31 GB** (free disk 106 GB → 76 GB),
+  Spotlight was indexing all of it, and the `dev` profile is `optimized + debuginfo`, so the engine
+  link is heavy. A busy-wait shell loop was spinning a core as well.
+  Precautions on machine B until the cause is known: **`CARGO_BUILD_JOBS=2`**,
+  **`RUST_TEST_THREADS=1`**, `nice -n 19`, `cargo check` in preference to `cargo build`, one crate
+  at a time, and never a `while pgrep` wait loop. `target/.metadata_never_index` now keeps Spotlight
+  out of the build directory. The owner's words: "be conscience of this machines limits and work
+  within them".
 - **Never touch the installed release.** Never change system or security settings: PowerShell's execution policy stays Restricted, so use `.cmd` launchers.
 - **Project rules (AGENTS.md):**
   - Clean room: no GPL, LGPL or AGPL code, not even reading it (OpenCASCADE, FreeCAD, SolveSpace, CadQuery, LibreCAD, QCAD), and nothing copied from other CAD products.
@@ -185,52 +206,88 @@ Export the caps first in every shell:
 - Bash: `export CARGO_BUILD_JOBS=4 RUST_TEST_THREADS=2`
 - cmd: `set CARGO_BUILD_JOBS=4` and `set RUST_TEST_THREADS=2`
 
-### 6.1 Merge #5867 (`drawing.view.snapshot` V2, which includes #3877)
+### 6.1 Merge the new `upstream/drawings` (done)
 
-```bash
-git switch beta/drawings
-git merge --no-ff prs/pr-5867 -m "Merge PR #5867 into beta/drawings"
-```
+Done on machine B, 2026-10-27. Kept here because it explains the branch's shape.
 
-The trial merge on 2026-10-27 conflicted in **15 regions across 10 files**. "Ours" is
-`beta/drawings`; "theirs" is #5867. The line counts below are the sizes of each side.
+Upstream merged **#4817** (de7bf4fc), **#3877** (3575c997) and **#2457** (ebafe074) into the
+`drawings` branch at 04:18-04:20 UTC on 2026-10-27, so `upstream/drawings` moved from f18616e1 to
+**ebafe074**. Merging the branch brought all three in at once; the plan's "merge #5867 to get
+#3877" no longer applies.
 
-| File | Regions (ours/theirs lines) | What to do |
+Every conflict had one cause: this branch carries **#4817's old head** (77e58dfa, pulled in with
+#7316's old head 55389724), and the branch carries #4817 as merged. 24 regions in 7 files:
+
+| File | Regions | Resolution |
 |---|---|---|
-| `crates/geom/src/profile.rs` | 3 (25/0, 2/3, 16/8) | #5867 carries an **older copy of #4817**. #7316, already merged, has the newer one. **Keep ours (#7316)**, then add only what #5867 itself needs. |
-| `crates/geom/src/tests.rs` | 2 (65/0, 1/11) | Same cause. **Keep ours**, and add #5867's new tests if they're not just old #4817 tests. |
-| `crates/doc/src/sheet.rs` | 3 (2/18, 1/10, 2/1) | Read both sides. #5867's additions are title-block (#3877) and view code, so keep both. |
-| `crates/doc/src/eval_more.rs` | 1 (2/8) | Probably both. Check imports. |
-| `crates/engine/src/tests.rs` | 1 (5/8) | Probably both: test `mod` lines. |
-| `crates/engine/src/schema/mod.rs` | 1 (1/2) | Both, kept sorted. |
-| `crates/doc/src/lib.rs` | 1 | `mod` lines: keep both, sorted. |
-| `crates/engine/src/lib.rs` | 1 | `mod` lines: keep both, sorted. |
-| `crates/geom/src/lib.rs` | 1 | `mod` lines: keep both, sorted. |
-| `crates/render/src/lib.rs` | 1 | `mod` lines: keep both, sorted. |
+| `crates/geom/src/profile.rs` | 3 | **Ours.** #7316's `ArcMap`, `Seg2::mapped`, `similar()` through it. |
+| `crates/geom/src/tests.rs` | 2 | **Ours.** The `every_kind_of_segment` helper and its two ArcMap tests. |
+| `crates/geom/src/lib.rs` | 1 | **Ours.** Keeps `ArcMap` in the `profile` re-export. |
+| `crates/doc/src/eval_more.rs` | 1 | **Ours.** `mapped(f, ArcMap::turn(-0.0, true))` over the inline match. |
+| `crates/doc/src/sheet.rs` | 3 | **Ours.** Same pattern in all three. |
+| `crates/geom/src/drawing_view.rs` | 8 | **Theirs**, the merged #4817: 291 lines against our 269. |
+| `crates/geom/src/drawing_view_tests.rs` | 6 | **Theirs**: 273 lines against our 203. |
 
-**After resolving:**
-1. Fix the **`checked!` macro mismatch.** #5867's call sites use 3 arguments; `main`'s macro takes 2. Adapt #5867's call sites to `main`'s macro, and don't change the macro.
-2. Run `cargo fmt --all`, `cargo xtask lists`, then targeted tests:
-   ```bash
-   cargo test -p solidcraft-geom
-   cargo test -p solidcraft-doc
-   cargo test -p solidcraft-engine drawing
-   ```
-3. Commit with a message that lists how each conflict was resolved, as c4434126 does.
+`map_controls` stays private: everything here goes through `mapped`, and the only other hit is an
+unrelated `ui-egui` function of the same name. Taking theirs for the two `drawing_view` files loses
+nothing, because only 77e58dfa ever touched them on this side.
 
-### 6.2 Merge #7430 (dashes and PNG, which includes #7255 grid walk)
+Auto-merged hunks were read for silent drops, the §8.3 lesson: `check_design_numbers` is still in
+`doc/format.rs`, `geom/aabb2.rs` gains `intersection()`, `geom/paper.rs` exports
+`MAX_COORDINATE_MM`, `geom/drawing_sheet.rs` only changes a doc comment.
+
+### 6.1a Merge cost from the new base, measured 2026-10-27
+
+From **b6312c4a** with `git merge-tree` (no build, no working tree). The earlier figures in the log
+were taken from 88f65b4d and included the 24 regions the drawings merge has now absorbed.
+
+| To merge | Conflicting files | Notes |
+|---|---|---|
+| **#7316** 1403e678 | **none** | The rebased ArcMap commit, the same work kept as "ours" in §6.1. Independent of the #3891 decision. |
+| **#6482** 2c084c49 | **none** | `mesh_lines`, base `main`. Independent. |
+| **#7430** 1aaff713 | 2: `Cargo.lock`, `crates/io/Cargo.toml` | A dependency addition. Stacked on `drawings`, not on #3891, so independent. |
+| **#3891** 36cf48a3 | 9: doc/format.rs, engine cmd/{edit,file,inspect,metadata,mod}.rs, engine/lib.rs, io/design.rs, ui-egui/agent_chat/tests.rs | Needs the storage decision first. |
+| **#5867** cce39b40 | 12 | #3891 plus 3. Needs the same decision. |
+
+So three of the five can go in whatever the owner decides about #3891.
+
+### 6.2 Decide #3891: the owner's call
+
+**Upstream changed the storage model.** 472a3306 says a drawing now lives in the file of the design
+it draws ("bherbruck's proposal, Cameron's choice, so the separate drawing file goes"), and it
+deletes `DRAWING_EXT`, `read_drawing`, `read_drawing_file`, `write_drawing_container`, `file_kind`,
+`FileKind` and `is_drawing_path`. The beta's **D1** and beta item 6 assume a separate `.scdwg`
+linked to the design, and Phase 2's first task is to port #3891 *with* `.scdwg`. That plan is now
+against an upstream decision by the maintainers.
+
+**What taking #3891 (36cf48a3) would give**, as three commits on the new `drawings`:
+- 472a3306: drawings saved inside the design, both container and plain JSON, with the refusal rules,
+  the round-trip tests and the two pending format files;
+- e0cb46c1: `crates/engine/src/cmd/drawing.rs`, ten commands (`drawing.create`, `.list`, `.open`,
+  `.close`, `.delete`, `.inspect`, `.set`, `.properties`, `.properties.set`, `.properties.remove`),
+  each drawing its own undo, plus 454 lines of tests and the en/ja/zh strings;
+- 36cf48a3: unknown-command tests.
+
+That is most of Phase 2's "drawing session" and "records" tasks, as merges rather than hand-written
+code. The commands use `.params(…)`; check whether they carry **output** schemas before relying on
+them, because AGENTS.md requires both and `schema/unconverted.txt` may only shrink.
+
+**If the owner holds to `.scdwg`:** skip #3891 and #5867, write Phase 2 by hand as planned, and
+accept that the beta diverges from upstream's file format, which makes it hard to give back (D5).
+
+### 6.3 Merge #7430 (dashes and PNG, which includes #7255)
 `git merge --no-ff prs/pr-7430`. It has not been tried yet. Then run the targeted geom and io tests (`cargo test -p solidcraft-io paper`).
 
-### 6.3 Bring in #6482 (`mesh_lines`, the shared hidden-line module, into `main`)
+### 6.4 Bring in #6482 (`mesh_lines`, the shared hidden-line module, into `main`)
 - Cherry-pick or merge `prs/pr-6482`.
 - The earlier research found it conflicts only in `crates/engine/src/cmd/view_dxf.rs`.
 - Test with `cargo test -p solidcraft-engine view_dxf`.
 
-### 6.4 Optionally merge #6788 (tolerance text, `format_dimension`, into `main`)
+### 6.5 Optionally merge #6788 (tolerance text, `format_dimension`, into `main`)
 - Merge `prs/pr-6788`.
 - Our review found two problems ([§8.5](#85-reviews-posted-upstream)). Check whether the author has fixed them before relying on it.
 
-### 6.5 Close out Phase 1
+### 6.6 Close out Phase 1
 1. `cargo build -p solidcraft`. A debug build takes about 15 minutes from clean on the laptop.
 2. Targeted tests on geom, doc and io, plus the engine filters you touched.
 3. Launch with `plan\run-dev.cmd`, or the Bash lines in Appendix A.
@@ -334,6 +391,69 @@ was fixed, and the exact state you left.
 - With the owner's OK, committed it on `beta/drawings` and pushed the branch to `origin` (DevonHope/solidcraft) as `beta/drawings`. This is the beta's first push; nothing went to upstream.
 - **State left:** the branch is clean and matches `origin/beta/drawings`. Nothing is running.
 
+### Session 2: Mac (machine B), 2026-10-27 09:59 to midday (UTC-4)
+
+**The owner's ask:** read the synced folder, build last night's version, and carry on with the
+to-do list.
+
+**About 10:00: what machine B actually had.**
+- The folder the owner pointed at, `~/Library/CloudStorage/SynologyDrive-Software/solidcraft`, is
+  the laptop's working tree synced by Synology Drive. **It has no `.git`**: Synology filters
+  dot-folders, so `.gitignore` and `.github` are missing too. Its `target/` holds the laptop's
+  **Windows** binaries (`solidcraft.exe`, a 1.2 GB `.pdb`).
+- No Rust at all: no rustup, no cargo, nothing from Homebrew.
+- The owner said the work "is not published on the git here". `git ls-remote` showed the fork does
+  have `beta/drawings`, at **88f65b4d**, so the branch pushed in session 1 was reachable.
+- **Decision (owner, by prompt):** install rustup 1.99.1 with the wasm32 target, and clone the fork
+  to `~/dev/solidcraft`, outside the synced folder, so that Mac build artifacts never reach the NAS
+  and the laptop. The synced folder has been left untouched.
+
+**About 10:30: the clone is last night's version.**
+- History holds c4434126, eaac419a, 23734142, f18616e1 and 55389724, as §8.7 says.
+- `diff -rq` of the clone against the synced folder, less `.git`, `target` and `plan`: **no source
+  file differs.** Only 151 `.svg` files, and those only by CRLF, from the Windows checkout. Nothing
+  exists only on the synced side, so the laptop had committed everything.
+
+**About 10:45: the plan was out of date, because upstream moved overnight.**
+- Re-fetching the PR heads showed nearly all of them moved. **#4817, #3877 and #2457 were merged
+  into `upstream/drawings`** at 04:18-04:20 UTC; the rest were restacked on the result. **#5867 was
+  force-pushed**: its old head 5bb34f49 no longer exists, so §6.1's 15-region analysis was written
+  against a commit that is gone. `upstream/main` also moved 49 commits ahead. Recorded in §8.7.
+- Trial merges from 88f65b4d: new `drawings` 24 regions in 7 files; #7316's new head 14 in 2;
+  #7430 26 in 9; #3891 44 in 16; #5867 53 in 19. The last two include the first's 24.
+- So the next step was **not** "merge #5867" but "merge the new `upstream/drawings`".
+
+**About 10:48: the baseline build, and a mistake.**
+- `cargo build -p solidcraft` at 88f65b4d: **clean in 3 m 55 s** with `CARGO_BUILD_JOBS=8`.
+- **Mistake:** `git worktree add` was refused because `beta/drawings` was already checked out, the
+  following `cd` failed, and a trial merge therefore ran **in the checkout that was building**. It
+  was aborted at once; the tree went back to 88f65b4d with no changes, and the build finished
+  clean. Later trial merges used `git worktree add --detach ~/dev/sc-trial`.
+
+**About 11:00: the merge, and the tests that passed.**
+- Merged the new `upstream/drawings` ebafe074: 24 regions in 7 files, resolved as §6.1 records.
+- `solidcraft-geom` 276, `solidcraft-doc` 464 and `solidcraft-io` 179 tests pass, 0 failed.
+  `cargo fmt --check`, `cargo xtask lists` and `cargo xtask skills` pass. Committed as **b6312c4a**.
+
+**About 11:20: the caps were set too high, and the Mac crashed.**
+- Machine B was run with `CARGO_BUILD_JOBS=8` and `RUST_TEST_THREADS=4`, raised from §5's 4 and 2
+  on the reasoning that 14 cores and 48 GB beat the laptop. During the engine test build and clippy
+  the **Mac rebooted**. The cause was not pinned down: the same caps had already built
+  `-p solidcraft` in 3 m 55 s and passed the geom, doc and io tests. Afterwards the target dir was
+  31 GB with Spotlight indexing it, free disk had gone 106 → 76 GB, and a busy-wait shell loop was
+  spinning a core. See the machine B caps in §5.
+- The owner: "whatever youre doing is crashing my mac, be conscience of this machines limits and
+  work within them." All build processes were killed. §5 now carries the machine B caps:
+  **2 jobs, 1 test thread**, `cargo check` over `cargo build`, one crate at a time.
+- **Three gates are still owed on b6312c4a:** the engine targeted tests (drawing, bom, metadata),
+  `clippy -D warnings`, and `cargo check -p solidcraft`. The commit message says so too.
+
+**Still open at the end of the session:** the owner's decision on #3891 (§6.2) and, under §5,
+whether to push. #5867 was last updated 10:42 UTC, so the author is restacking now and the heads in
+§8.7 may move again.
+
+---
+
 ---
 
 ## 8. Reference
@@ -356,7 +476,10 @@ say "approximate (mesh)".
 
 **Decisions** (change them before Phase 2 if you disagree):
 - **D1. A drawing is its own document tab, linked to the part.** This is upstream's W11 model: separate linked files, with undo per file, compatible with #3891.
-- **D2. View lines come from the existing mesh hidden-line code** (`view_dxf` / `mesh_lines` from #6482), plus a new `View::orthographic(&Plane)`. Exact hidden lines (#2457) come after the beta.
+- **D2 (still the beta's choice; see the 2026-10-27 note below). View lines come from the existing mesh hidden-line code** (`view_dxf` / `mesh_lines` from #6482), plus a new `View::orthographic(&Plane)`. Exact hidden lines (#2457) come after the beta.
+  - **2026-10-27 note:** #2457 was merged into `upstream/drawings`, so `crates/geom/src/hlr/` is now
+    in this branch's base. D2 is unchanged: the beta still draws view lines from the mesh. The exact
+    code is simply available early, behind the same interface, for after the beta.
 - **D3. Text is drawn as glyph outlines in Liberation Sans**, which already ships under the OFL. DXF uses TEXT entities instead.
 - **D4. PDF uses `pdf-writer` 0.15** (MIT OR Apache-2.0, pure Rust, builds for wasm), added to `io` only.
 - **D5. The beta stays local or on a branch of the fork.** Upstream claims cover most pieces. Give work back through the owner's issue, not a competing PR (§8.4).
@@ -640,22 +763,38 @@ Posted 2026-10-27, all as COMMENT reviews, after the owner approved each one. Wa
 | Local `main`, fast-forwarded in Phase 0 | 84a3a0c4 |
 | Fork `origin/main`, not updated | 56bcd872cb57aabcfdedb0767f1fbc198f923991 |
 
-**PR heads as fetched on 2026-10-27** (last commit date in brackets):
+**PR heads, first fetched 2026-10-27 morning (machine A), re-fetched 2026-10-27 10:45 EDT (machine B).**
+Nearly every head moved overnight: #4817, #3877 and #2457 were **merged into `upstream/drawings`**
+at 04:18-04:20 UTC, and the rest were restacked on top of the result. The old #5867 head
+(5bb34f49) no longer exists, so it was force-pushed.
 
-| PR | Head | Notes |
-|---|---|---|
-| #2457 | 0a84ccaba25294585ef542905ac323c1bac83697 (10-23) | exact HLR, after the beta |
-| #3013 | 498dc545e90ec646886001b42f7df0b8f7ae6a90 (10-25) | stacked on #2457 |
-| #3877 | 1cfdcc95c5dc8460b0899695d5d1c74ad37e1e99 (10-26) | inside #5867 |
-| #3891 | 72dfdb5347660c27a955ead14c068ae1fb6b4779 (10-26) | drawing session K4–K8; port its structure in Phase 2 |
-| #4817 | 77e58dfa0aa7e515daed9d3a691b01f7c1afd506 (10-26) | inside #7316 |
-| #5349 | e999ee5afa36c16f158b6a87e611347b3c763884 (10-23) | UI scaffold; borrow its dispatcher in Phase 5 |
-| #5867 | 5bb34f49e98fa33ab35cb920bacc9e1082e96194 (10-26) | **next to merge** |
-| #6482 | 2c084c49a9eceaf72e7639275aeaac79351d24be (10-25) | `mesh_lines` |
-| #6788 | c70ec84e315fbb8ed35a32407a0ea04c082328b4 (10-25) | tolerance text, optional |
-| #7255 | 8f500113110d45628dfdbd2b9a53dc55f5fc906b (10-26) | inside #7430 |
-| #7316 | 5538972499178c03425dd66a7412fa7936e151b1 (10-26) | **merged** (eaac419a) |
-| #7430 | 4063a536e493fb63becd50ce4ff29c6816d8c8c6 (10-27) | dashes and PNG |
+| PR | Head on machine A | Head now | State |
+|---|---|---|---|
+| #2457 | 0a84ccab | 7ae1dea8 | **MERGED into `drawings`** as ebafe074 |
+| #3013 | 498dc545 | c68e49c0 | open, stacked on #2457 |
+| #3877 | 1cfdcc95 | 11dc5af9 | **MERGED into `drawings`** as 3575c997 |
+| #3891 | 72dfdb53 | **36cf48a3** | open; now the base of #5867 |
+| #4817 | 77e58dfa | 9bac2e44 | **MERGED into `drawings`** as de7bf4fc |
+| #5349 | e999ee5a | e999ee5a | unchanged; UI scaffold |
+| #5867 | 5bb34f49 (**gone**) | **cce39b40** | open, stacked on #3891 |
+| #6482 | 2c084c49 | 2c084c49 | unchanged; base `main` |
+| #6788 | c70ec84e | c70ec84e | unchanged |
+| #7255 | 8f500113 | d2fcae51 | open, inside #7430 |
+| #7316 | 55389724 (merged here) | 1403e678 | open; restacked on new `drawings` |
+| #7430 | 4063a536 | 1aaff713 | open, restacked |
+
+**Branches now:** `upstream/drawings` is **ebafe074** (3 commits past the f18616e1 we merged).
+`upstream/main` is **53cba0cf**, 49 commits past the 23734142 this branch is based on.
+
+**The upstream stack today:**
+
+```
+upstream/drawings ebafe074        <- #4817, #3877, #2457 all merged in
+  |- #7316  1403e678   drawings + 1
+  |- #3891  36cf48a3   drawings + 3  (drawing session, storage, commands)
+  |    \- #5867  cce39b40   #3891 + 4  (extents, projected views, dimensions, snapshot)
+  \- #7430  1aaff713   drawings + n  (dashes, PNG)
+```
 
 The laptop also has a local branch `pr-6163` (5d658c30, the parked ledger draft), kept for reading only.
 
