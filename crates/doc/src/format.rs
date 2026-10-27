@@ -2629,4 +2629,28 @@ mod tests {
         let parallel: SweepOrientation = serde_json::from_value(serde_json::json!("parallel")).unwrap();
         assert_eq!(parallel, SweepOrientation::Parallel);
     }
+
+    /// The design's cap on `user_materials` is applied to the raw JSON, before the design is
+    /// decoded, and still is now that #3891's `take_drawings` runs in front of it. The drawings
+    /// branch replaced this check with `DESIGN.check_numbers`, which only skips `metadata`: that
+    /// would leave the cap to `check_typed_numbers` after decoding. The malformed entries below
+    /// are what tells the two apart, because the raw check refuses them by length while decoding
+    /// refuses them as the wrong type.
+    #[test]
+    fn the_user_materials_cap_is_applied_before_a_design_is_decoded() {
+        let base: Value = serde_json::from_str(&Document::new("A").to_json()).unwrap();
+        let design = |materials: Vec<Value>| {
+            let mut v = base.clone();
+            let o = v.as_object_mut().expect("a design is an object");
+            // take_drawings removes this before the numbers are checked.
+            o.insert("drawings".into(), Value::Array(Vec::new()));
+            o.insert("user_materials".into(), Value::Array(materials));
+            v.to_string()
+        };
+        // Not vacuous: one good material beside the same `drawings` key still opens.
+        read(&design(vec![serde_json::json!({"name": "m", "density": 1.0})])).expect("a design within the cap opens");
+        let junk = vec![serde_json::json!({"density": "not a number"}); crate::MAX_USER_MATERIALS + 1];
+        let error = read(&design(junk)).unwrap_err().to_string();
+        assert!(error.contains("exceeds 1000 user materials"), "refused for the wrong reason: {error}");
+    }
 }
