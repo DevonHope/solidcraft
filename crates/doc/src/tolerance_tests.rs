@@ -65,19 +65,19 @@ fn limits_are_sums_of_the_unrounded_nominal() {
     v.presentation = TolerancePresentation::Limits;
     let text = format_dimension(&v, &s).unwrap();
     assert_eq!(text.nominal, "40");
-    assert_eq!(text.tolerance, ToleranceText::Stacked { upper: "40,10".into(), lower: "39,95".into() });
-    assert_eq!(text.plain(), "40 40,10/39,95");
+    assert_eq!(text.tolerance, ToleranceText::Limits { upper: "40,10".into(), lower: "39,95".into() });
+    assert_eq!(text.plain(), "40,10/39,95");
     v.nominal = 40.4;
     let text = format_dimension(&v, &s).unwrap();
     assert_eq!(text.nominal, "40");
-    assert_eq!(text.tolerance, ToleranceText::Stacked { upper: "40,50".into(), lower: "40,35".into() });
+    assert_eq!(text.tolerance, ToleranceText::Limits { upper: "40,50".into(), lower: "40,35".into() });
     v.tolerance = Tolerance::Symmetric { deviation: 0.1 };
-    assert_eq!(format_dimension(&v, &s).unwrap().tolerance, ToleranceText::Stacked { upper: "40,50".into(), lower: "40,30".into() });
+    assert_eq!(format_dimension(&v, &s).unwrap().tolerance, ToleranceText::Limits { upper: "40,50".into(), lower: "40,30".into() });
     v.nominal = -0.05;
     v.tolerance = Tolerance::Deviations { upper: 0.05, lower: -0.1 };
     assert_eq!(
         format_dimension(&v, &s).unwrap().tolerance,
-        ToleranceText::Stacked { upper: "0,00".into(), lower: "−0,15".into() },
+        ToleranceText::Limits { upper: "0,00".into(), lower: "−0,15".into() },
         "limits are absolute numbers; a zero limit keeps its requested decimals"
     );
 }
@@ -226,7 +226,7 @@ fn shared_number_policy_converts_nominals_deviations_and_limits() {
     let mut v = value(25.4, Tolerance::Symmetric { deviation: 0.254 });
     assert_eq!(format_dimension(&v, &s).unwrap().plain(), "1.000 ±0.010");
     v.presentation = TolerancePresentation::Limits;
-    assert_eq!(format_dimension(&v, &s).unwrap().plain(), "1.000 1.010/0.990");
+    assert_eq!(format_dimension(&v, &s).unwrap().plain(), "1.010/0.990");
     s.unit = "deg".into();
     s.decimals = 1;
     v.kind = Kind::Angle;
@@ -247,7 +247,7 @@ fn shared_number_policy_converts_nominals_deviations_and_limits() {
     s.tolerance_decimals = 5;
     v.nominal = 12_345.0;
     v.tolerance = Tolerance::Deviations { upper: 1.23456, lower: -0.50000 };
-    assert_eq!(format_dimension(&v, &s).unwrap().plain(), "12\u{202f}345 +1,234\u{202f}56/−,5");
+    assert_eq!(format_dimension(&v, &s).unwrap().plain(), "12\u{202f}345 +1,234\u{202f}56/−,500\u{202f}00");
 }
 
 #[test]
@@ -381,7 +381,17 @@ fn dimension_seeded_100k_never_panics_and_is_deterministic() {
         match first {
             Ok(text) => {
                 accepted[category] += 1;
-                assert!(text.plain().contains(&text.nominal), "nominal lost in case {case}: {text:?}");
+                assert_eq!(text.nominal, crate::display_units::format_value(v.nominal, v.kind, &s.unit, s.decimals, &s.number).unwrap().text);
+                if !matches!(&text.tolerance, ToleranceText::Limits { .. }) {
+                    assert!(text.plain().contains(&text.nominal), "nominal lost in case {case}: {text:?}");
+                }
+                if let ToleranceText::Stacked { upper, lower } | ToleranceText::Limits { upper, lower } = &text.tolerance
+                    && upper != "0"
+                    && lower != "0"
+                {
+                    let places = |t: &str| t.split_once(['.', ',']).map_or(0, |(_, f)| f.chars().filter(char::is_ascii_digit).count());
+                    assert_eq!(places(upper), places(lower), "stacked precision in case {case}: {text:?}");
+                }
                 assert!(!text.plain().contains('\n'), "plain output must stay on one line");
                 assert_eq!(text.underline, v.not_to_scale);
             }
@@ -392,4 +402,161 @@ fn dimension_seeded_100k_never_panics_and_is_deterministic() {
     assert!(accepted.iter().all(|n| *n > 1_000), "must exercise every successful tolerance kind: {accepted:?}");
     assert!(rejected > 10_000, "must exercise hostile inputs");
     eprintln!("seed=0x6782b14e920d5ac3 cases=100000 accepted_by_kind={accepted:?} rejected={rejected}");
+}
+
+#[test]
+fn limits_replace_the_nominal_in_plain_text() {
+    let s = style();
+    let mut v = value(40.0, Tolerance::Deviations { upper: 0.1, lower: -0.05 });
+    v.presentation = TolerancePresentation::Limits;
+    let text = format_dimension(&v, &s).unwrap();
+    eprintln!("limits: input=40 +0.1/-0.05 expected=40,10/39,95 actual={}", text.plain());
+    assert_eq!(text.plain(), "40,10/39,95");
+    assert_eq!(text.nominal, "40", "the nominal remains available as metadata");
+    assert_eq!(text.tolerance, ToleranceText::Limits { upper: "40,10".into(), lower: "39,95".into() });
+    v.nominal = 40.4;
+    v.count = 4;
+    v.indicator = Some(Indicator::Diameter);
+    assert_eq!(format_dimension(&v, &s).unwrap().plain(), "4× Ø40,50/40,35");
+}
+
+#[test]
+fn same_sign_deviations_warn_only_after_rounding_moves_the_nominal() {
+    let s = style();
+    let cases = [
+        (40.0, -0.02, -0.05, "40 −0,02/−0,05", false),
+        (40.0, 0.05, 0.02, "40 +0,05/+0,02", false),
+        (39.96, -0.02, -0.05, "40 −0,02/−0,05", false),
+        (40.04, 0.05, 0.02, "40 +0,05/+0,02", false),
+        (39.6, -0.02, -0.05, "40 −0,02/−0,05", true),
+        (40.4, 0.05, 0.02, "40 +0,05/+0,02", true),
+    ];
+    let mut observed = Vec::new();
+    for (nominal, upper, lower, expected, warns) in cases {
+        let text = format_dimension(&value(nominal, Tolerance::Deviations { upper, lower }), &s).unwrap();
+        eprintln!(
+            "same-sign: input={nominal} {upper}/{lower} expected={expected}, warning={warns}; actual={}, warnings={:?}",
+            text.plain(),
+            text.warnings
+        );
+        observed.push((text.plain(), !text.warnings.is_empty()));
+    }
+    assert_eq!(observed, cases.map(|(_, _, _, text, warns)| (text.to_owned(), warns)));
+    // Compare before/after rounding in display units, avoiding a false change from
+    // converting the shown value back into internal units.
+    for (kind, unit, nominal, scale) in
+        [(Kind::Length, "in", 1016.0, 25.4), (Kind::Angle, "deg", std::f64::consts::FRAC_PI_2, std::f64::consts::PI / 180.0)]
+    {
+        let mut s = s.clone();
+        s.unit = unit.into();
+        let mut v = value(nominal, Tolerance::Deviations { upper: -0.02 * scale, lower: -0.05 * scale });
+        v.kind = kind;
+        assert!(format_dimension(&v, &s).unwrap().warnings.is_empty(), "{unit}");
+    }
+}
+
+#[test]
+fn stacked_values_suppress_only_shared_trailing_zeros() {
+    let mut s = style();
+    s.number.trailing_zeros = false;
+    let mut observed = Vec::new();
+    let cases = [
+        (0.1, -0.05, "40 +0,10/−0,05"),
+        (0.1, -0.2, "40 +0,1/−0,2"),
+        (0.0, -0.05, "40 0/−0,05"),
+        (0.1, -0.0001, "40 +0,1/0"),
+        (0.1, 0.05, "40 +0,10/+0,05"),
+        (-0.05, -0.1, "40 −0,05/−0,10"),
+    ];
+    for (upper, lower, expected) in cases {
+        let text = format_dimension(&value(40.0, Tolerance::Deviations { upper, lower }), &s).unwrap();
+        eprintln!("stacked: input=40 {upper}/{lower}, trim zeros; expected={expected}; actual={}", text.plain());
+        observed.push(text.plain());
+    }
+    assert_eq!(observed, cases.map(|(_, _, text)| text));
+    for marker in [DecimalMarker::Comma, DecimalMarker::Point] {
+        s.number.marker = marker;
+        s.number.leading_zero = false;
+        s.number.groups = true;
+        s.tolerance_decimals = 5;
+        let v = value(12_345.0, Tolerance::Deviations { upper: 1.23456, lower: -0.5 });
+        let expected = if marker == DecimalMarker::Comma {
+            "12\u{202f}345 +1,234\u{202f}56/−,500\u{202f}00"
+        } else {
+            "12\u{202f}345 +1.234\u{202f}56/−.500\u{202f}00"
+        };
+        assert_eq!(format_dimension(&v, &s).unwrap().plain(), expected);
+    }
+    s.number.marker = DecimalMarker::Comma;
+    s.tolerance_decimals = 2;
+    let mut v = value(-0.05, Tolerance::Deviations { upper: 0.05, lower: -0.1 });
+    v.presentation = TolerancePresentation::Limits;
+    assert_eq!(format_dimension(&v, &s).unwrap().plain(), ",00/−,15", "a zero limit shares the pair's precision and leading-zero policy");
+}
+
+#[test]
+fn unchanged_nominals_do_not_warn_for_unit_conversion_roundoff() {
+    let mut s = style();
+    s.decimals = 3;
+    let cases = [
+        (Kind::Length, "in", 1.3 * 25.4, 25.4, "1,300"),
+        (Kind::Length, "in", 33.02, 25.4, "1,300"),
+        (Kind::Length, "in", 0.762, 25.4, "0,030"),
+        (Kind::Length, "ft", 15.24, 304.8, "0,050"),
+        (Kind::Length, "cm", 0.7, 10.0, "0,070"),
+        (Kind::Angle, "deg", std::f64::consts::FRAC_PI_2, std::f64::consts::PI / 180.0, "90,000"),
+    ];
+    let mut warned = Vec::new();
+    for (kind, unit, nominal, scale, expected) in cases {
+        s.unit = unit.into();
+        for (upper, lower) in [(-0.02, -0.05), (0.05, 0.02)] {
+            let mut v = value(nominal, Tolerance::Deviations { upper: upper * scale, lower: lower * scale });
+            v.kind = kind;
+            let text = format_dimension(&v, &s).unwrap();
+            assert_eq!(text.nominal, expected);
+            if !text.warnings.is_empty() {
+                warned.push((unit, nominal, text.plain()));
+            }
+        }
+    }
+    assert!(warned.is_empty(), "unit conversion alone must not warn: {warned:?}");
+    // The roundoff guard is relative, not a fixed tolerance that hides small values.
+    for unit in ["mm", "in"] {
+        s.unit = unit.into();
+        let v = value(1e-20, Tolerance::Symmetric { deviation: 1e-21 });
+        assert_eq!(format_dimension(&v, &s).unwrap().warnings, [DimensionWarning::RoundingOutsideTolerance]);
+    }
+    // Even when conversion underflows, a nonzero internal value can be outside
+    // the shown zero's tolerance. Do not mistake that for an unchanged nominal.
+    s.unit = "in".into();
+    let v = value(f64::from_bits(2), Tolerance::Symmetric { deviation: f64::from_bits(1) });
+    assert_eq!(format_dimension(&v, &s).unwrap().warnings, [DimensionWarning::RoundingOutsideTolerance]);
+    // Identity units need no roundoff allowance, even for a one-step change.
+    s.unit = "mm".into();
+    s.decimals = 0;
+    let v = value(1.0_f64.next_up(), Tolerance::Deviations { upper: -0.02, lower: -0.05 });
+    assert_eq!(format_dimension(&v, &s).unwrap().warnings, [DimensionWarning::RoundingOutsideTolerance]);
+}
+
+#[test]
+fn repeat_counts_use_the_unitless_number_format() {
+    let mut s = style();
+    s.number.groups = true;
+    let mut v = value(25.4, Tolerance::None);
+    v.count = 10_000;
+    s.unit = "in".into();
+    s.decimals = 3;
+    let text = format_dimension(&v, &s).unwrap();
+    eprintln!("repeat: input=count 10000, 25.4 mm in inches, groups=true; expected=10\u{202f}000× 1,000; actual={}", text.plain());
+    assert_eq!(text.plain(), "10\u{202f}000× 1,000");
+    for (repeat, suffix) in [(Repeat::Times, "× "), (Repeat::X, "X ")] {
+        s.repeat = repeat;
+        for (groups, count, expected) in [(true, 9999, "9999"), (true, 10_000, "10\u{202f}000"), (false, 10_000, "10000")] {
+            s.number.groups = groups;
+            v.count = count;
+            assert_eq!(format_dimension(&v, &s).unwrap().count, Some(format!("{expected}{suffix}")));
+        }
+        v.count = 1;
+        assert_eq!(format_dimension(&v, &s).unwrap().count, None);
+    }
 }

@@ -199,6 +199,8 @@ pub struct DimensionStyle {
     pub unit: String,
     pub number: NumberFormat,
     pub decimals: u8,
+    /// Maximum precision of both stacked values. Trailing-zero suppression removes
+    /// only shared zeros, so their decimal places match (except an unsigned zero deviation).
     pub tolerance_decimals: u8,
     pub repeat: Repeat,
 }
@@ -208,6 +210,7 @@ pub struct DimensionStyle {
 pub struct DimensionText {
     pub count: Option<String>,
     pub indicator: Option<String>,
+    /// Retained for inspection; limits replace this run in both plain text and layout.
     pub nominal: String,
     pub tolerance: ToleranceText,
     pub frame: Frame,
@@ -216,7 +219,7 @@ pub struct DimensionText {
 }
 
 impl DimensionText {
-    /// Keep the nominal even for limits; boxes and underlines remain layout metadata.
+    /// Limits replace the nominal; boxes and underlines remain layout metadata.
     pub fn plain(&self) -> String {
         let mut text = String::new();
         if self.frame == Frame::Parentheses {
@@ -228,7 +231,9 @@ impl DimensionText {
         if let Some(indicator) = &self.indicator {
             text.push_str(indicator);
         }
-        text.push_str(&self.nominal);
+        if !matches!(&self.tolerance, ToleranceText::Limits { .. }) {
+            text.push_str(&self.nominal);
+        }
         match &self.tolerance {
             ToleranceText::None => {}
             ToleranceText::Symmetric(t) | ToleranceText::Code(t) => {
@@ -237,6 +242,11 @@ impl DimensionText {
             }
             ToleranceText::Stacked { upper, lower } => {
                 text.push(' ');
+                text.push_str(upper);
+                text.push('/');
+                text.push_str(lower);
+            }
+            ToleranceText::Limits { upper, lower } => {
                 text.push_str(upper);
                 text.push('/');
                 text.push_str(lower);
@@ -273,17 +283,16 @@ pub fn format_dimension(value: &DimensionValue, style: &DimensionStyle) -> Resul
         Tolerance::Fit { class } => ToleranceText::Code(class.clone()),
         t if value.presentation == TolerancePresentation::Limits => {
             let (upper, lower) = t.deviations().ok_or_else(|| DocError::Invalid("limits require numeric deviations".into()))?;
-            ToleranceText::Stacked {
-                upper: format_value(value.nominal + upper, value.kind, &style.unit, style.tolerance_decimals, &style.number)?.text,
-                lower: format_value(value.nominal + lower, value.kind, &style.unit, style.tolerance_decimals, &style.number)?.text,
-            }
+            let (upper, lower) = dimension_pair(value.nominal + upper, value.nominal + lower, value.kind, style)?;
+            ToleranceText::Limits { upper: upper.text, lower: lower.text }
         }
         Tolerance::Symmetric { deviation } => {
             let d = dimension_deviation(*deviation, value.kind, style)?;
             ToleranceText::Symmetric(format!("±{}", d.text))
         }
         Tolerance::Deviations { upper, lower } => {
-            ToleranceText::Stacked { upper: signed_deviation(*upper, value.kind, style)?, lower: signed_deviation(*lower, value.kind, style)? }
+            let (upper, lower) = dimension_pair(*upper, *lower, value.kind, style)?;
+            ToleranceText::Stacked { upper: signed_deviation(upper), lower: signed_deviation(lower) }
         }
     };
     let mut warnings = Vec::new();
@@ -293,18 +302,26 @@ pub fn format_dimension(value: &DimensionValue, style: &DimensionStyle) -> Resul
         // manufacture an outside offset at an inclusive decimal boundary (1.1 - 1).
         let (_, scale) = expr::unit_info(&style.unit).ok_or_else(|| DocError::Invalid("unknown number display unit".into()))?;
         let centre = shown.value * scale;
-        if !(centre + lower..=centre + upper).contains(&value.nominal) {
+        // A non-identity unit conversion can put an unchanged decimal nominal
+        // a few floating-point steps from its original value. Account for both
+        // conversions here, never an absolute margin or slack at the tolerance bounds.
+        let conversion_roundoff = if scale == 1.0 { 0.0 } else { 2.0 * f64::EPSILON * centre.abs().max(value.nominal.abs()) };
+        let moved = (centre - value.nominal).abs() > conversion_roundoff;
+        if moved && !(centre + lower..=centre + upper).contains(&value.nominal) {
             warnings.push(DimensionWarning::RoundingOutsideTolerance);
         }
     }
+    let count = if value.count > 1 {
+        let repeat = match style.repeat {
+            Repeat::Times => '×',
+            Repeat::X => 'X',
+        };
+        Some(format!("{}{repeat} ", format_number(f64::from(value.count), 0, &style.number)?.text))
+    } else {
+        None
+    };
     Ok(DimensionText {
-        count: (value.count > 1).then(|| {
-            let repeat = match style.repeat {
-                Repeat::Times => '×',
-                Repeat::X => 'X',
-            };
-            format!("{}{repeat} ", value.count)
-        }),
+        count,
         indicator: value.indicator.map(|i| {
             match i {
                 Indicator::Diameter => "Ø",
@@ -335,9 +352,40 @@ fn dimension_deviation(deviation: f64, kind: expr::Kind, style: &DimensionStyle)
     Ok(shown)
 }
 
-fn signed_deviation(deviation: f64, kind: expr::Kind, style: &DimensionStyle) -> Result<String> {
-    let shown = dimension_deviation(deviation, kind, style)?;
-    Ok(if shown.value > 0.0 { format!("+{}", shown.text) } else { shown.text })
+/// Pad already-rounded fractions to their shared precision without rounding again.
+fn dimension_pair(upper: f64, lower: f64, kind: expr::Kind, style: &DimensionStyle) -> Result<(Shown, Shown)> {
+    let mut upper = format_value(upper, kind, &style.unit, style.tolerance_decimals, &style.number)?;
+    let mut lower = format_value(lower, kind, &style.unit, style.tolerance_decimals, &style.number)?;
+    let marker = match style.number.marker {
+        DecimalMarker::Point => '.',
+        DecimalMarker::Comma => ',',
+    };
+    let places = |text: &str| text.split_once(marker).map_or(0, |(_, fraction)| fraction.chars().filter(char::is_ascii_digit).count());
+    let precision = places(&upper.text).max(places(&lower.text));
+    for shown in [&mut upper, &mut lower] {
+        if places(&shown.text) == precision {
+            continue;
+        }
+        let (integer, fraction) = shown.text.split_once(marker).unwrap_or((&shown.text, ""));
+        let mut digits: String = fraction.chars().filter(char::is_ascii_digit).collect();
+        // W09b has already bounded precision to at most eight decimal places.
+        digits.extend(std::iter::repeat_n('0', precision - digits.len()));
+        let mut text = if integer == "0" && !style.number.leading_zero { String::new() } else { integer.to_owned() };
+        text.push(marker);
+        grouped_digits(&mut text, &digits, false, style.number.groups);
+        shown.text = text;
+    }
+    Ok((upper, lower))
+}
+
+fn signed_deviation(shown: Shown) -> String {
+    if shown.value == 0.0 {
+        "0".into()
+    } else if shown.value > 0.0 {
+        format!("+{}", shown.text)
+    } else {
+        shown.text
+    }
 }
 
 #[cfg(test)]

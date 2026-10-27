@@ -52,7 +52,16 @@ pub enum Repeat {
 pub enum ToleranceText {
     None,
     Symmetric(String),
-    Stacked { upper: String, lower: String },
+    /// Signed deviations beside the nominal; zero is unsigned and has no decimals.
+    Stacked {
+        upper: String,
+        lower: String,
+    },
+    /// Absolute bounds that replace the nominal in the displayed dimension.
+    Limits {
+        upper: String,
+        lower: String,
+    },
     Code(String),
 }
 
@@ -65,6 +74,8 @@ pub enum Frame {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DimensionWarning {
+    /// Rounding moved the nominal, leaving the unrounded value outside the bounds
+    /// centred on the rounded nominal. An unchanged nominal never raises this warning.
     RoundingOutsideTolerance,
 }
 
