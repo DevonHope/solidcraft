@@ -19,12 +19,12 @@ Times in the log are local time on the machine that did the work, with the UTC o
 | | |
 |---|---|
 | **Last updated** | 2026-10-27 evening, on the laptop (machine A, see [Machines](#machines)) |
-| **Branch** | `beta/drawings`: the Phase 1 notes commit on top of **4f18ddea**. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
+| **Branch** | `beta/drawings`: the notes commit on top of **51f0c2d0**, the merge of `upstream/main` 9fb41f83. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
-| **Pushed?** | **Partly.** The fork has everything up to a5be5764. The laptop's session-4 commits (09c3052f, 3232bbb0, 4f18ddea and these notes) are **local only** until the owner OKs a push. **Agents: confirm with the owner before each push.** |
+| **Pushed?** | **Partly.** The fork has everything up to a5be5764. The laptop's session-4 commits (09c3052f, 3232bbb0, 4f18ddea, f572c8c7, 51f0c2d0 and these notes) are **local only** until the owner OKs a push. **Agents: confirm with the owner before each push.** |
 | **Phase** | **Phase 1 of 6 (integration base): DONE** on 2026-10-27. Every PR in the stack is merged, the 10 `drawing.*` commands have schemas, every check the Mac left for the laptop passes, and the app starts and runs the drawing commands ([§2](#2-progress-checklist)). |
 | **Running** | Nothing. |
-| **Next action** | **Merge upstream `main` into `beta/drawings`**: the owner chose to finish Phase 1 first, then merge `main`. On 2026-10-27 the branch was 144 commits behind `main` (9fb41f83), and a dry run conflicts in 5 files, every one additive ([§6.9](#69-merge-upstream-main-measured-2026-10-27)). Then **Phase 2** ([§8.2](#82-phases-26-full-task-lists)). |
+| **Next action** | **Phase 2**, the headless drawing core ([§8.2](#82-phases-26-full-task-lists)). `upstream/main` 9fb41f83 is merged (51f0c2d0, [§6.9](#69-merge-upstream-main--done-51f0c2d0)), so the branch is current with `main` as of 2026-10-27. #3891 and #5867 already give Phase 2 its session, records and `drawing.view.snapshot`; start from "Exact view basis" and "View lines". |
 | **Blockers** | None. |
 
 ---
@@ -75,7 +75,7 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` not started.
 - [x] Merged **#5867** (cce39b40, unchanged since the Mac's re-fetch) as **09c3052f** on the
   laptop: 4 regions in 4 files, all additive. Its one 3-argument `checked!` call site now uses
   `main`'s 2-argument macro; the spec already had `.contract(&CONTRACT)`.
-- [x] Wrote the schemas for the 10 `drawing.*` commands (**3232bbb0**, [§6.6](#66-contracts-owed)).
+- [x] Wrote the schemas for the 10 `drawing.*` commands (**3232bbb0**, [§6.6](#66-contracts-owed--done-3232bbb0)).
   The coverage test's list of commands without schemas went from 30 to 20; the 20 left predate
   this branch.
 - [x] Merged **#6788** at its new head **9e6b1bb2** as **4f18ddea**: clean. The author's update
@@ -413,7 +413,15 @@ re-checking a rebuilt base.
 
 Then start **Phase 2** ([§8.2](#82-phases-26-full-task-lists)).
 
-### 6.9 Merge upstream `main`, measured 2026-10-27
+### 6.9 Merge upstream `main` — done, 51f0c2d0
+
+**Done on the laptop, 2026-10-27,** exactly as measured below, with one more change git couldn't
+see: `main`'s new `crates/doc/src/placement_reuse.rs` names every `Document` field in
+`same_geometry_inputs`, so `drawings` needed a decision. It is **compared**, like every other
+non-placement field: never wrong, and at worst it skips a reuse when a drawing and a placement
+change together. `cargo check --all-targets` on doc, io, engine, ui-egui, mcp, the app and the CLI
+then passed. Tests: doc 96, io 71, engine `--lib` 135. Every line `main` added in the 22 files both
+sides changed is in the result, apart from the two rewordings. The merge commit records it all.
 
 The owner chose to finish Phase 1 first, then merge `main`. Measured with `git merge-tree` from
 4f18ddea against `upstream/main` **9fb41f83**: **144 commits** since the branch's base (23734142),
@@ -706,9 +714,36 @@ Phase 7, with its plan in §8.8. Found while writing it:
 - RFC #3820 already proposes the 2D nesting;
 - the ribbon already has an "Arrange" group.
 
-**State left:** Phase 1 done. `beta/drawings` is the notes commit on top of 4f18ddea, tree clean,
-nothing running. **Not pushed**: 09c3052f, 3232bbb0, 4f18ddea and the notes are on the laptop only.
-Next is the `main` merge (§6.9).
+**About 22:40: Phase 1 notes** committed as **f572c8c7**.
+
+**About 22:45 to 23:30: `upstream/main` merged (51f0c2d0).**
+- Same 5 conflicts as the dry run, resolved as §6.9 says.
+- The first `cargo check` failed: `main`'s new `placement_reuse.rs` destructures `Document`
+  exhaustively and didn't know `drawings`. Decided to compare them (§6.9).
+- The second check passed on doc, io, engine, ui-egui, mcp, the app and the CLI, all targets.
+- A line-by-line check of the 22 files both sides changed found nothing of `main`'s missing.
+- Built the three test binaries (13 m 46 s), counted every filter's matches first, then ran them:
+  doc 96, io 71, engine 135, all passing.
+- `cargo build -p solidcraft` on the merge (11 m 54 s), then a short launch with a copy of the
+  plate (`designs\main-merge-check.solidcraft`; `.solidcraft` files still open after #7325). The
+  window now says **v0.25.1**, `main`'s version. Over the control channel:
+  - `drawing.view.snapshot` right (fitted at 5:1);
+  - `drawing.create` and `drawing.inspect`;
+  - `edit.undo` inside the drawing answered "nothing to undo in this drawing (close it to undo in
+    the model)";
+  - `drawing.close`, then `edit.undo` undid "Create Drawing", and `drawing.list` was empty.
+
+  So per-drawing undo, the merged `edit.rs`, works in the app. The screenshot is
+  `%USERPROFILE%\SolidCraft-dev\screens\main-merge-launch.png`. Then `app.quit {force: true}`.
+- **Leftover:** the first launch check's forced quit left an autosave of its throwaway copy in
+  `SolidCraft-dev\recovery`, so the dev build now opens with "Recover unsaved design?" for
+  `phase1-check.solidcraft`. **Press Discard.** It holds nothing of value, and only the dev data
+  folder has it. Next time, end a launch check by undoing back to a clean design before
+  `app.quit`, or discard it on the next launch.
+
+**State left:** Phase 1 done and `main` merged. `beta/drawings` is the notes commit on top of
+51f0c2d0. **Not pushed**: 09c3052f, 3232bbb0, 4f18ddea, f572c8c7, 51f0c2d0 and the notes are on the
+laptop only. Next is Phase 2.
 
 ---
 
@@ -1021,7 +1056,8 @@ Posted 2026-10-27, all as COMMENT reviews, after the owner approved each one. Wa
 | The web offline test is skipped. | Chrome isn't installed on the laptop. |
 | **3 engine tests fail on macOS** (machine B) at b0f2a86e: `prism_local_tests::a_ring_cut_round_a_counterbored_hole_in_a_chamfered_disc`, and `robustness_goldens` seeds **36** and **71**. | **Platform divergence in the kernel, not the merges.** Seed 36 is proven: macOS produces the **Windows** golden to six decimals (area 9964.083286 against 9964.083285, faces 21, edges 45, the same lumps error), and `tests/robustness/goldens.json` carries `platforms` overrides for **windows only**, so macOS falls back to the Linux-recorded shared value. Seed 71 differs in area by 0.0002% with faces 20→19 and edges 52→50, a tolerance-driven topology flip; prism is 0.108% off a 0.1% tolerance. Neither test file was touched by any merge, `crates/kernel` and `crates/sketch` are byte-identical to the base, and #3891 changes no geom, kernel or sketch code. The one geometry change in the base is #4817's rewrite of `Seg2::polyline` through a new `chords()`, which is output-identical: the arc step's old `.max(1e-6)` could never bind, because `tol >= radius * 1e-6` forces the step above 2.8e-3, and the other branches apply the same `max(1e-9)` once instead of per branch. **Confirmed on the laptop, 2026-10-27, at 09c3052f: all three pass on Windows** (prism 4 s, seed 36 23 s, seed 71 7 s), so they are macOS-only. Recording macOS goldens is upstream's call, so none were blessed. |
 | **Owed on a machine with the headroom** (the laptop): **all done 2026-10-27.** | `cargo xtask wasm`: 12 crates build, no new warnings. CLI `run_results`: 18 passed. Clippy on geom, doc, render, io, engine and ui-egui with all targets: only the two Windows-only warnings `main` has. The three tests above pass. |
-| The dev window title says "v0.24.0". | Expected: the version number isn't bumped on `main`. Tell the windows apart by the port (27900) and the data folder. |
+| The dev window title says "v0.24.0" (before the `main` merge) or "v0.25.1" (after it, 51f0c2d0). | Expected: it is `main`'s version number, which can match an installed release. Tell the windows apart by the port (27900) and the data folder. |
+| The dev build opens with "Recover unsaved design?" | A launch check closed with `app.quit {force: true}` left an autosave in `SolidCraft-dev\recovery`. Press Discard. Only the dev data folder is affected. |
 
 ### 8.7 SHAs
 
