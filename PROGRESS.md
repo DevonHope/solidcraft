@@ -18,13 +18,13 @@ Times in the log are local time on the machine that did the work, with the UTC o
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-27 evening, on the laptop (machine A, see [Machines](#machines)) |
-| **Branch** | `beta/drawings`: the notes commit on top of **51f0c2d0**, the merge of `upstream/main` 9fb41f83. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
+| **Last updated** | 2026-10-28, on the Mac (machine B, see [Machines](#machines)) |
+| **Branch** | `beta/drawings` at **62eab387**, two commits on top of 3bf352b7. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
-| **Pushed?** | **Yes**, the whole branch, to the fork as `origin/beta/drawings`, on 2026-10-27 with the owner's OK ("Push to fork"): a5be5764 → 56861a46, then this status line. Another machine gets everything with `git pull --ff-only` (§3). **Agents: confirm with the owner before each push.** |
-| **Phase** | **Phase 1 of 6 (integration base): DONE** on 2026-10-27. Every PR in the stack is merged, the 10 `drawing.*` commands have schemas, every check the Mac left for the laptop passes, and the app starts and runs the drawing commands ([§2](#2-progress-checklist)). |
+| **Pushed?** | **Yes**, through **62eab387**, to the fork as `origin/beta/drawings` on 2026-10-28 with the owner's OK ("Push to the fork"). Another machine gets everything with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
+| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Its first two items — Exact view basis and View lines — are done, committed and pushed ([§8.2](#82-phases-26-full-task-lists)). |
 | **Running** | Nothing. |
-| **Next action** | **Phase 2**, the headless drawing core ([§8.2](#82-phases-26-full-task-lists)). `upstream/main` 9fb41f83 is merged (51f0c2d0, [§6.9](#69-merge-upstream-main--done-51f0c2d0)), so the branch is current with `main` as of 2026-10-27. #3891 and #5867 already give Phase 2 its session, records and `drawing.view.snapshot`; start from "Exact view basis" and "View lines". |
+| **Next action** | Phase 2's remaining items, in the plan's order: **Standard layout**, then the **Paper scene builder**, the rest of the **view commands**, **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
 | **Blockers** | None. |
 
 ---
