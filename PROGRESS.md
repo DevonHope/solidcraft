@@ -195,6 +195,18 @@ git switch beta/drawings
 
 ## 5. Working rules agreed with the owner
 
+- **After each phase, install the app again** (owner, 2026-10-28). Build with
+  `packaging/macos/package.sh --arch aarch64`, then copy `SolidCraft.app` from the DMG into
+  `/Applications` with `ditto`. Each round is about 16 minutes and about 7 GB of `target`.
+  Note when telling the owner it is ready: **Phases 2, 3 and 4 are headless**, so the installed
+  app looks identical after each of them. The Drawing tab lights up in Phase 5 only
+  (§8.2, "Workspace wiring"). What is visible before then is Phase 2's SVG export and the
+  `drawing.*` commands over the control channel.
+- An installed beta claims `.sc`, `.solidcraft` and `.solvecraft` as **Editor**, and
+  `.step/.stp/.igs/.iges/.3mf/.stl` as **Viewer**, so it becomes the default for all of them
+  (§8.9). Turn its update check off: `check_updates` in
+  `~/Library/Application Support/SolidCraft/app.ron`, read at `ui-egui/src/update.rs:593`.
+
 - **Before posting to GitHub, show the findings first.** Post one item at a time, showing each before it goes up.
 - **No push, PR, comment or claim without the owner's explicit OK.** Nothing has been pushed yet.
 - **Keep the laptop usable:**
@@ -798,10 +810,10 @@ say "approximate (mesh)".
   - `Sheet` gains `title_block`, `views`, `dimensions` and `notes`; the drawing gains `projection` (first or third).
   - The format change is **one file** in `crates/doc/src/drawing/format/pending/`.
   - Add a save → open round-trip test and a mutation fuzz case in `io/src/mutate.rs`.
-- [ ] **Exact view basis.** Add `View::orthographic(&Plane)` to `mesh_lines` (right = x, up = y, no perspective), fed by #4817's `NamedView::basis()`.
+- [x] **Exact view basis.** Done 2026-10-28 (machine B), uncommitted. Add `View::orthographic(&Plane)` to `mesh_lines` (right = x, up = y, no perspective), fed by #4817's `NamedView::basis()`.
   - Going through the camera tilts top and bottom views by 1e-6 rad, which leaves stray stubs on vertical edges.
   - Test a view where faces are seen edge-on.
-- [ ] **View lines (#5867's planned V3).**
+- [x] **View lines (#5867's planned V3).** Done 2026-10-28 (machine B), uncommitted.
   - `ViewLines` is backend-neutral: visible and hidden pieces, with an accuracy of "sampled ± chord".
   - Build one mesh `Scene` per source and chord, shared by all views.
   - Chain the pieces into polylines.
@@ -830,6 +842,34 @@ say "approximate (mesh)".
   - A changed source marks views out of date.
   - `drawing.update` recomputes on the file worker, like `Kind::ExportDxf`. Never on the window thread; wasm runs it serially.
 - [ ] **SVG export.** `drawing.export {format: "svg", path, sheet?}` through the existing paper SVG writer.
+
+**Phase 2, the first two items — done on machine B, 2026-10-28, not yet committed.**
+
+- `View::orthographic(&Plane)` in `mesh_lines/projection.rs`, beside `from_camera`. It returns
+  `Result` and **checks** the basis (finite, unit, square to 1e-9) rather than squaring it up: the
+  basis comes from a saved record, and axes that are off would scale the depth `project` returns
+  so `depth_eps` would stop meaning what it says. `Plane`'s own doc already states its axes are
+  orthonormal, so this enforces an invariant the type claims.
+- `ViewLines`, `chord_mm` and `chain` in `engine/src/drawing_view.rs`, beside `extents`;
+  `drawing.view.snapshot` now returns `lines` with `status: approximate`.
+
+Three decisions worth keeping:
+
+1. **Every placed body**, `prepare(s, CMD, chord, |_| true)`, not `view_dxf`'s
+   `|b| s.body_visible(&b.name)`. The module doc is explicit: hiding a part in the model never
+   changes a drawing.
+2. **Chaining was written fresh** rather than reusing `view_dxf::connect`, which does the same
+   degree-two walk but is tied to `DxfEntity` and only chains hidden lines. Collapsing the two is
+   worth doing later, from the DXF side, as its own change.
+3. **`tangent_edges: show` is refused** (`not supported yet: … (#5866)`), following the
+   shaded-views refusal above it. `prepare` has no switch — the classification is baked into the
+   placed body's mesh — so the option would otherwise have silently done nothing. The command had
+   been accepting the parameter while nothing computed lines at all.
+
+Verified: 11 `drawing_view` tests and 8 `mesh_lines` tests pass, clippy `--all-targets` is silent,
+and two mutation checks hold — negating the view's `back` fails the depth-sign assertion, and
+returning loose segments from `chain` fails the polyline assertion. `cargo xtask ci` has **not**
+been run.
 
 **Phase 3: text, notes and dimensions (about 1–1.5 weeks).**
 
@@ -1027,13 +1067,22 @@ This changes daily. Re-check claims before acting.
 
 Posted 2026-10-27, all as COMMENT reviews, after the owner approved each one. Watch for replies.
 
-**Replies so far:**
-- **#6788:** armin0411 pushed 9e6b1bb2 at 19:32 UTC−3 and asked the owner on 2026-10-27 at
-  23:46 UTC to take another look. The laptop read the diff: limits are now their own
-  `ToleranceText::Limits` (the plain text drops the nominal), and `RoundingOutsideTolerance` fires
-  only when rounding moved the nominal, allowing for unit-conversion round-off. Both findings look
-  addressed, and the diff adds no unwrap or panic. **Nothing has been posted in reply;** a re-review
-  is the owner's call.
+**Replies so far:** all four developers answered, and all four were replied to on 2026-10-28
+with the owner's explicit OK. Each claim was verified by reading the merged code on
+`beta/drawings` 3bf352b7, not by re-running their benchmarks or fuzz runs.
+
+- **#2457** (SychPL, merged): `Trim::margin` gone, `Trim::near` in its place, the rounding test
+  present, `trim_samples` and the scene-extent cap bounded. Replied: issuecomment-6470833664.
+- **#3877** (CamWight, merged): both named tests present, `place_cells` shared by `validate` and
+  `layout`, `MAX_COORDINATE_MM` clamp in `cell.rs`. "Field" naming deferred until one becomes a
+  file key, which we accepted. Replied: issuecomment-6470834223.
+- **#4817** (CamWight, merged): `MIN_PART`/`MAX_PART` 1e-6/1e6, `boundary` returns `Result`,
+  `basis_looking` re-orthogonalises with its test. Replied: issuecomment-6470834713.
+- **#6788** (armin0411, OPEN): all five points addressed at `9e6b1bb2` — `ToleranceText::Limits`
+  its own variant with `plain()` omitting the nominal, the warning gated on `moved`, stacked
+  decimals padded, the sign test added, the repeat count through `format_number`. Re-review
+  posted as COMMENT: pullrequestreview-5683740904. Not confirmed by us: the 100,000-case fuzz
+  runs and the eight planted faults, and the branch is not rebased onto current `main`.
 
 | PR | What it is | Finding | Review link |
 |---|---|---|---|
@@ -1181,6 +1230,53 @@ making parts. Decide this with the owner; its command ids must not reuse an exis
 - Offer to work with #3820's author, or keep it in the beta first (D5)?
 
 ---
+
+### 8.9 A beta build upgrades a real design to a format older builds refuse
+
+Seen on machine B, 2026-10-27 15:25: opening and saving `Fairphone6 ESR MagSafe Rear Cover.solidcraft`
+in the beta build took it from `solidcraft/38` to `solidcraft/40` with
+`format_pending: ["cone-primitive", "drawings", "feature-id-refs"]`.
+
+**Those numbers are from before the main merge (51f0c2d0).** `main` has since folded
+`cone-primitive` and `feature-id-refs` into `v40/` and added `v41/`, so `pending/` now holds
+`drawings.rs` alone and this branch writes **format 42** with `format_pending: ["drawings"]`.
+`main` itself is at 41. The conclusion is unchanged, and the one unknown name is still enough
+for the refusal: nothing but this branch opens a design it has saved.
+
+This is the format policy working as designed, not a defect. `crates/doc/src/format/pending/README.md`:
+while `pending/` holds any change, the build writes the last folded number + 1, "which no release
+reads". `read()` (`crates/doc/src/format.rs:797`) stamps `d.format` and `d.format_pending` on every
+design it opens, unconditionally, and `to_json` writes them straight back out.
+
+Who refuses this branch's output (format 40 with those three names):
+
+- the build that wrote the `.bak`, which reads up to 38: refused on the number.
+- `upstream/main`: its FORMAT is **also 40** — it has folded `cone-primitive` and `feature-id-refs`
+  into `crates/doc/src/format/v40/` — so it passes the number check and refuses on the single name
+  it does not know, `drawings`.
+
+This branch is *behind* main on folding: those two changes are still in our `pending/`. Merging
+current main would move them into `v40/` and push our FORMAT to 41, which main would then refuse on
+the number instead. Catching up does not help compatibility.
+
+Nothing in the tree writes an older format: no env var, flag, preference or command, and no warning
+before a save raises a design's format.
+
+The design needs none of the changes it is now tagged with. Ten features (import, move, sketch,
+extrude, fillet, sketch, extrude, fillet, sketch, extrude): no cone, no drawings, no pattern, no
+mirror, no construction-plane reference, and none of v39's four either (no revolve or circular
+pattern, no thread, no 3D sketch arc, no mesh blob — the one blob is a 441 KB STEP). The strings
+"cone" and "drawings" occur in the saved file only inside `format_pending` itself. Its content is
+what a 38 build would have written; only the tag and the list lock it to this build.
+
+The save writes a `.bak` holding the pre-save content, so format 38 survives exactly one save and a
+second overwrites it. Restoring it is not free: the backup predates four real edits made in the same
+sitting (6.1 → 6.4 mm, 28.5 → 28.75 mm, 7.1 → 7.25 mm, a fillet 8 → 10 mm, and the sketch re-solved).
+Copies of both files are in `~/SolidCraft-dev/designs/rescue-2026-10-27/` on machine B.
+
+So: don't open a design you need elsewhere (machine A, a release build, a synced folder) with a beta
+build. Exports are unaffected — a `.step` the beta build writes is ordinary STEP.
+
 
 ## Appendix A: launchers
 
