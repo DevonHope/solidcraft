@@ -18,14 +18,14 @@ Times in the log are local time on the machine that did the work, with the UTC o
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-28, on the Mac (machine B, see [Machines](#machines)) |
-| **Branch** | `beta/drawings`: **1107fd5e**, the chamfer test, with this status update on top of it. **43ee8f7d** is the last commit of Phase 2 work. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
+| **Last updated** | 2026-10-28, end of the day's work, on the Mac (machine B, see [Machines](#machines)) |
+| **Branch** | `beta/drawings`: **4d148966**, the chamfer test, with this day's-end status update on top of it. **43ee8f7d** is the last commit of Phase 2 feature work. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
-| **Pushed?** | **Yes**, everything including this status update, to the fork as `origin/beta/drawings` on 2026-10-28 with the owner's OK ("Push"). Three pushes that day: the standard layout and paper scene builder (d9711554), then the chamfer measurements and the test that answered them. Another machine gets everything with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
+| **Pushed?** | **Yes, everything**, to the fork as `origin/beta/drawings`, this day's-end update included, each push with the owner's explicit OK. 2026-10-28 went up in three: the standard layout and paper scene builder (d9711554), the chamfer measurements and the test that answered them (4d148966), and this. Another machine gets the lot with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
 | **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Four of its seven items are done: Exact view basis and View lines (pushed), Standard layout and the Paper scene builder (committed, not pushed) ([§8.2](#82-phases-26-full-task-lists)). |
 | **Running** | Nothing. |
 | **Last measured** | The chamfer case in [§8.6](#86-known-problems-and-fixes), 2026-10-28 on the Mac: the kernel's cost, and a test proving OK reuses the preview's evaluation. The report and its scripts are written and **not posted**. |
-| **Next action** | Phase 2's remaining items, in the plan's order: the **Drawing session and Records** the view commands need, then the **view commands** themselves, **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
+| **Next action** | Phase 2's **Drawing session** ("K4-lite"), then **Records**, the **view commands**, **Freshness and Update** and the **SVG export**. **Settle the gate first:** the drawing session is the first item to touch `doc` and `engine`, so the one-crate check that covered the geom work no longer applies, and `cargo xtask ci` is what rebooted this Mac ([§5](#5-working-rules-agreed-with-the-owner)). Agree with the owner how to run it — capped, and in pieces — before starting, not after. |
 | **Blockers** | None. |
 
 ---
@@ -1573,6 +1573,32 @@ On the laptop they're in `%USERPROFILE%\SolidCraft-dev\designs`, with their scri
   {"command": "solid.extrude", "params": {"distance": "thickness", "direction": "negative", "operation": "cut"}}
 ]}
 ```
+
+---
+
+**The chamfer timing pair** (§8.6), kept here because the originals were written to `/tmp` and
+the reboot took them. Time with `solidcraft-cli run <file>.json`; the medians on the Mac are
+79.0 ms for this one and 442.1 ms with the fillet line in, against a 36.9 ms body. Drop the
+`inspect` line and the figures do not move, so the difference is feature computation.
+
+```json
+{"commands": [
+  {"command": "sketch.create", "params": {"plane": "XY", "name": "Base"}},
+  {"command": "sketch.line", "params": {"points": [[0,0],[80,0],[80,60],[0,60]], "closed": true}},
+  {"command": "sketch.finish", "params": {}},
+  {"command": "solid.extrude", "params": {"distance": 10, "body_name": "Boss plate"}},
+  {"command": "sketch.create", "params": {"plane": "XY", "name": "Boss"}},
+  {"command": "sketch.circle.center", "params": {"center": [40,30], "diameter": 30}},
+  {"command": "sketch.finish", "params": {}},
+  {"command": "solid.extrude", "params": {"distance": 35, "operation": "join"}},
+  {"command": "solid.fillet", "params": {"edges": [[55,30,10]], "radius": 3}},
+  {"command": "solid.chamfer", "params": {"edges": [[55,30,35]], "distance": 1.5}}
+]}
+```
+
+The prismatic control, for the 9 ms-an-edge figure: a 100 x 80 x 20 plate, then
+`solid.chamfer` with `distance: 2` on `[[50, 0, 20]]` for one edge, or on
+`[[50,0,20], [100,40,20], [50,80,20], [0,40,20]]` for four.
 
 ---
 
