@@ -1369,6 +1369,51 @@ fn preview_has_no_side_effects() {
     assert_eq!(s.undo.len(), undo);
 }
 
+/// What makes a feature dialog feel quick on a dear feature: the live preview and OK share one
+/// evaluation cache (`Model::cache`, an `Arc` every scratch copy holds), so pressing OK on the
+/// value that was previewed takes the preview's evaluation instead of computing the feature over.
+///
+/// The cache is keyed by inputs, so the reuse is per value: OK pressed on a value whose preview
+/// has not landed pays for the feature in full. On a chamfer of a body that already carries a
+/// blend that is hundreds of milliseconds (PROGRESS.md section 8.6), which is what makes a typed
+/// value followed straight by OK feel slow even though nothing is computed twice over.
+#[test]
+fn ok_takes_the_previewed_chamfer_when_their_inputs_match() {
+    let body = |s: &mut Session| {
+        run(s, "solid.box", json!({"length": 40, "width": 30, "height": 20}));
+        run(s, "solid.fillet", json!({"edges": [[0, 15, 20]], "radius": 3}));
+    };
+    let chamfer = |distance: f64| [("solid.chamfer".to_string(), json!({"edges": [[40, 15, 20]], "distance": distance}))];
+    let hits = |s: &Session| s.model.cache.lock().expect("the evaluation cache").hits;
+    // OK as the window runs it: the dialog's commands computed on a scratch copy.
+    let ok = |s: &Session, cmds: &[(String, Value)]| {
+        s.scratch().compute_commands(cmds, None).expect("the chamfer computes");
+    };
+
+    // Previewed and OK'd at one distance: the evaluation is taken, not repeated.
+    let mut same = Session::default();
+    body(&mut same);
+    same.preview(&chamfer(1.5)).unwrap();
+    let before = hits(&same);
+    ok(&same, &chamfer(1.5));
+    assert_eq!(hits(&same), before + 1, "OK computed the chamfer the preview had already evaluated");
+
+    // A preview of another distance is no help.
+    let mut other = Session::default();
+    body(&mut other);
+    other.preview(&chamfer(1.5)).unwrap();
+    let before = hits(&other);
+    ok(&other, &chamfer(2.0));
+    assert_eq!(hits(&other), before, "a preview of another distance was taken for this one");
+
+    // And with no preview there is nothing to take.
+    let mut none = Session::default();
+    body(&mut none);
+    let before = hits(&none);
+    ok(&none, &chamfer(1.5));
+    assert_eq!(hits(&none), before, "OK found a cached chamfer that nothing had evaluated");
+}
+
 /// Previewing an edit shows the rebuilt feature although the timeline is rolled back to it.
 #[test]
 fn preview_of_an_edit() {
