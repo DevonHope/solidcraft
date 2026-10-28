@@ -70,6 +70,7 @@ pub mod render_surface;
 pub use project3d::iso_grid;
 pub mod sheet;
 pub mod text_params;
+pub mod tolerance;
 
 pub use assembly::{
     BomType, IDENTITY, MAX_PLACEMENT_DEPTH, MAX_PLACEMENTS, Mat, Occurrence, apply_point, apply_vector, is_identity, map_point_expr, mat_inverse,
@@ -115,6 +116,8 @@ mod feature_walk_tests;
 mod named_projection_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tolerance_tests;
 
 mod anchor_frame;
 pub use anchor_frame::state_in_face_anchor_frame;
