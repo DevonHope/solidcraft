@@ -21,7 +21,7 @@ Times in the log are local time on the machine that did the work, with the UTC o
 | **Last updated** | 2026-10-27 evening, on the laptop (machine A, see [Machines](#machines)) |
 | **Branch** | `beta/drawings`: the notes commit on top of **51f0c2d0**, the merge of `upstream/main` 9fb41f83. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
-| **Pushed?** | **Partly.** The fork has everything up to a5be5764. The laptop's session-4 commits (09c3052f, 3232bbb0, 4f18ddea, f572c8c7, 51f0c2d0 and these notes) are **local only** until the owner OKs a push. **Agents: confirm with the owner before each push.** |
+| **Pushed?** | **Yes**, the whole branch, to the fork as `origin/beta/drawings`, on 2026-10-27 with the owner's OK ("Push to fork"): a5be5764 → 56861a46, then this status line. Another machine gets everything with `git pull --ff-only` (§3). **Agents: confirm with the owner before each push.** |
 | **Phase** | **Phase 1 of 6 (integration base): DONE** on 2026-10-27. Every PR in the stack is merged, the 10 `drawing.*` commands have schemas, every check the Mac left for the laptop passes, and the app starts and runs the drawing commands ([§2](#2-progress-checklist)). |
 | **Running** | Nothing. |
 | **Next action** | **Phase 2**, the headless drawing core ([§8.2](#82-phases-26-full-task-lists)). `upstream/main` 9fb41f83 is merged (51f0c2d0, [§6.9](#69-merge-upstream-main--done-51f0c2d0)), so the branch is current with `main` as of 2026-10-27. #3891 and #5867 already give Phase 2 its session, records and `drawing.view.snapshot`; start from "Exact view basis" and "View lines". |
@@ -742,8 +742,8 @@ Phase 7, with its plan in §8.8. Found while writing it:
   `app.quit`, or discard it on the next launch.
 
 **State left:** Phase 1 done and `main` merged. `beta/drawings` is the notes commit on top of
-51f0c2d0. **Not pushed**: 09c3052f, 3232bbb0, 4f18ddea, f572c8c7, 51f0c2d0 and the notes are on the
-laptop only. Next is Phase 2.
+51f0c2d0, and **pushed to the fork** with the owner's OK (a5be5764 → 56861a46, then this note).
+Nothing is running. Next is Phase 2.
 
 ---
 
