@@ -77,13 +77,19 @@ fn an_a3_drawing_border_and_its_trimming_marks_validate_and_round_trip() {
 #[test]
 fn each_kind_names_its_layer_in_the_capitals_of_its_id() {
     use ObjectKind::*;
-    for (kind, layer) in [
+    let named = [
         (SheetBorder, "SHEET_BORDER"),
         (DrawingBorder, "DRAWING_BORDER"),
         (TitleBlock, "TITLE_BLOCK"),
         (PartsList, "PARTS_LIST"),
         (RevisionTable, "REVISION_TABLE"),
-    ] {
+        (View, "VIEW"),
+        (Dimension, "DIMENSION"),
+        (Note, "NOTE"),
+    ];
+    // Every kind is named here, so a new one can't slip past this test.
+    assert_eq!(named.map(|(kind, _)| kind), ObjectKind::ALL);
+    for (kind, layer) in named {
         assert_eq!(kind.layer(), layer);
         let id = layer.to_ascii_lowercase();
         assert_eq!(serde_json::to_value(kind).unwrap(), json!(id));

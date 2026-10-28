@@ -18,7 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::cell::{self, Content, Fit, HAlign};
+use crate::cell::{self, Content, Fit, HAlign, Part, Source};
 use crate::drawing_sheet::SheetLayout;
 use crate::paper::MAX_LINE_MM;
 use crate::{Aabb2, Vec2};
@@ -142,6 +142,48 @@ impl Cell {
 }
 
 impl TitleBlock {
+    /// The built-in title block, 180 x 54 mm: the fields ISO 7200 asks for, laid out as four rows
+    /// of cells under 2.5 mm labels. 180 mm is ISO 5457's widest block, so it fits the drawing
+    /// border of every standard sheet either way up except A5 portrait, which is too narrow for
+    /// it ([`Self::layout`] refuses that rather than shrinking it).
+    ///
+    /// A cell's label is text in the definition, not a message id: a block is a saved template a
+    /// user edits, and its words are part of the drawing rather than part of the app.
+    pub fn built_in() -> TitleBlock {
+        use HAlign::{Centre, Left};
+        use Source::{Component, Drawing, Revision};
+        let field = |source: Source, key: &str| Part::Field { source, key: key.into(), format: Default::default() };
+        let text = |cap_mm: f64, align: HAlign, fit: Fit, parts: Vec<Part>| CellKind::Text(TextCell { content: Content(parts), cap_mm, align, fit });
+        let count = |n| Fit { max_chars: Some(n), ..Fit::default() };
+        let (whole, wrap) = (Fit::default(), Fit { wrap: true, ..Fit::default() });
+        let title = Fit { max_chars: Some(25), wide_max_chars: Some(30), wrap: false };
+        let sheet = vec![field(Source::Sheet, "number"), Part::Text("/".into()), field(Source::Sheet, "count")];
+        let cells = [
+            ("title", [-180.0, 0.0, -68.0, 14.0], "Title", text(5.0, Left, title, vec![field(Component, "name")])),
+            ("identification_number", [-68.0, 0.0, 0.0, 14.0], "Identification number", text(5.0, Left, count(16), vec![field(Drawing, "number")])),
+            ("created_by", [-180.0, 14.0, -121.0, 24.0], "Created by", text(3.5, Left, count(20), vec![field(Revision, "designer")])),
+            ("approved_by", [-121.0, 14.0, -62.0, 24.0], "Approved by", text(3.5, Left, count(20), vec![field(Revision, "checker")])),
+            ("date_of_issue", [-62.0, 14.0, -31.0, 24.0], "Date of issue", text(3.5, Left, count(10), vec![field(Revision, "date")])),
+            ("sheet", [-31.0, 14.0, 0.0, 24.0], "Sheet", text(3.5, Centre, count(9), sheet)),
+            ("material", [-180.0, 24.0, -100.0, 34.0], "Material", text(3.5, Left, whole, vec![field(Component, "material")])),
+            ("finish", [-100.0, 24.0, -30.0, 34.0], "Finish", text(3.5, Left, whole, vec![field(Component, "properties.finish")])),
+            ("mass", [-30.0, 24.0, 0.0, 34.0], "Mass", text(3.5, Centre, whole, vec![field(Component, "mass")])),
+            ("legal_owner", [-180.0, 34.0, -100.0, 54.0], "Legal owner", text(3.5, Left, wrap, vec![field(Drawing, "properties.legal_owner")])),
+            (
+                "general_tolerances",
+                [-100.0, 34.0, -30.0, 54.0],
+                "General tolerances",
+                text(2.5, Left, wrap, vec![field(Drawing, "properties.general_tolerances")]),
+            ),
+            ("projection", [-30.0, 34.0, 0.0, 54.0], "Projection", CellKind::ProjectionSymbol),
+        ];
+        let cells = cells
+            .into_iter()
+            .map(|(name, rect_mm, label, kind)| Cell { name: name.into(), rect_mm, label: Some(Label { text: label.into(), cap_mm: 2.5 }), kind })
+            .collect();
+        TitleBlock { size_mm: Vec2::new(180.0, 54.0), outline_line_mm: 0.7, cell_line_mm: 0.35, cells }
+    }
+
     /// `cell`'s rectangle `rect` inside its lines: each side moved in by half the line drawn on it,
     /// the outline's on the block's edges and a cell line's inside the block.
     fn inside_lines(&self, cell: &Cell, rect: Aabb2) -> Aabb2 {

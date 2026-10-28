@@ -100,9 +100,27 @@ pub enum ObjectKind {
     PartsList,
     /// The sheet table that lists the drawing's revisions.
     RevisionTable,
+    /// A view of the model: its visible and hidden lines.
+    View,
+    /// A dimension: its lines, arrows and the text that reads them.
+    Dimension,
+    /// A note on the sheet, with its leader when it has one.
+    Note,
 }
 
 impl ObjectKind {
+    /// Every kind, the sheet's own furniture first, then what is drawn on it.
+    pub const ALL: [ObjectKind; 8] = [
+        ObjectKind::SheetBorder,
+        ObjectKind::DrawingBorder,
+        ObjectKind::TitleBlock,
+        ObjectKind::PartsList,
+        ObjectKind::RevisionTable,
+        ObjectKind::View,
+        ObjectKind::Dimension,
+        ObjectKind::Note,
+    ];
+
     /// The layer DXF and PDF put this kind's groups on: its name in capitals, as DXF layers are
     /// named.
     pub fn layer(self) -> &'static str {
@@ -112,6 +130,9 @@ impl ObjectKind {
             ObjectKind::TitleBlock => "TITLE_BLOCK",
             ObjectKind::PartsList => "PARTS_LIST",
             ObjectKind::RevisionTable => "REVISION_TABLE",
+            ObjectKind::View => "VIEW",
+            ObjectKind::Dimension => "DIMENSION",
+            ObjectKind::Note => "NOTE",
         }
     }
 }

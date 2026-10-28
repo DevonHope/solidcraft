@@ -2,53 +2,20 @@ use serde_json::json;
 
 use super::*;
 use crate::bspline::tests::Lcg;
-use crate::cell::{DESCENDER_OF_CAP, Format, PADDING_MM, Part, Source, Warning, place_lines};
+use crate::cell::{DESCENDER_OF_CAP, PADDING_MM, Part, Warning, place_lines};
 use crate::drawing_sheet::{DrawingBorderProfile, Orientation, PaperSize, Sheet, SheetSize};
 
 fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Aabb2 {
     Aabb2 { min: Vec2::new(x0, y0), max: Vec2::new(x1, y1) }
 }
 
-fn field(source: Source, key: &str) -> Part {
-    Part::Field { source, key: key.to_string(), format: Format::default() }
-}
-
 fn text(cap_mm: f64, align: HAlign, fit: Fit, parts: Vec<Part>) -> CellKind {
     CellKind::Text(TextCell { content: Content(parts), cap_mm, align, fit })
 }
 
-/// The S2 plan's 180 x 54 mm default, as test data: twelve cells under 2.5 mm labels.
+/// The built-in block: the tests below measure it, so a change to it has to answer them.
 fn block() -> TitleBlock {
-    use HAlign::{Centre, Left};
-    use Source::{Component, Drawing, Revision};
-    let count = |n| Fit { max_chars: Some(n), ..Fit::default() };
-    let (whole, wrap) = (Fit::default(), Fit { wrap: true, ..Fit::default() });
-    let title = Fit { max_chars: Some(25), wide_max_chars: Some(30), wrap: false };
-    let sheet = vec![field(Source::Sheet, "number"), Part::Text("/".into()), field(Source::Sheet, "count")];
-    let cells = [
-        ("title", [-180.0, 0.0, -68.0, 14.0], "Title", text(5.0, Left, title, vec![field(Component, "name")])),
-        ("identification_number", [-68.0, 0.0, 0.0, 14.0], "Identification number", text(5.0, Left, count(16), vec![field(Drawing, "number")])),
-        ("created_by", [-180.0, 14.0, -121.0, 24.0], "Created by", text(3.5, Left, count(20), vec![field(Revision, "designer")])),
-        ("approved_by", [-121.0, 14.0, -62.0, 24.0], "Approved by", text(3.5, Left, count(20), vec![field(Revision, "checker")])),
-        ("date_of_issue", [-62.0, 14.0, -31.0, 24.0], "Date of issue", text(3.5, Left, count(10), vec![field(Revision, "date")])),
-        ("sheet", [-31.0, 14.0, 0.0, 24.0], "Sheet", text(3.5, Centre, count(9), sheet)),
-        ("material", [-180.0, 24.0, -100.0, 34.0], "Material", text(3.5, Left, whole, vec![field(Component, "material")])),
-        ("finish", [-100.0, 24.0, -30.0, 34.0], "Finish", text(3.5, Left, whole, vec![field(Component, "properties.finish")])),
-        ("mass", [-30.0, 24.0, 0.0, 34.0], "Mass", text(3.5, Centre, whole, vec![field(Component, "mass")])),
-        ("legal_owner", [-180.0, 34.0, -100.0, 54.0], "Legal owner", text(3.5, Left, wrap, vec![field(Drawing, "properties.legal_owner")])),
-        (
-            "general_tolerances",
-            [-100.0, 34.0, -30.0, 54.0],
-            "General tolerances",
-            text(2.5, Left, wrap, vec![field(Drawing, "properties.general_tolerances")]),
-        ),
-        ("projection", [-30.0, 34.0, 0.0, 54.0], "Projection", CellKind::ProjectionSymbol),
-    ];
-    let cells = cells
-        .into_iter()
-        .map(|(name, rect_mm, label, kind)| Cell { name: name.into(), rect_mm, label: Some(Label { text: label.into(), cap_mm: 2.5 }), kind })
-        .collect();
-    TitleBlock { size_mm: Vec2::new(180.0, 54.0), outline_line_mm: 0.7, cell_line_mm: 0.35, cells }
+    TitleBlock::built_in()
 }
 
 fn sheet_layout(profile: &DrawingBorderProfile, size: PaperSize, orientation: Orientation) -> SheetLayout {
