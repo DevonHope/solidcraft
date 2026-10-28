@@ -29,6 +29,7 @@ pub mod texture_interpolation;
 pub mod texture_lod;
 pub mod texture_sampling;
 pub mod transmission;
+mod visual_style;
 
 pub use analysis::{AnalysisColors, AnalysisMode, SceneAnalysis};
 pub use backend::{
@@ -42,3 +43,4 @@ pub use gif::gif;
 pub use product::{FaceAppearance, ProductMesh, ProductScene};
 pub use raster::{Canvas, render, render_png, render_transparent};
 pub use scene::{MIN_ALPHA, Rgb, SECTION_CAP, SEE_THROUGH, Scene, SceneLine, SceneMesh, png};
+pub use visual_style::VisualStyle;

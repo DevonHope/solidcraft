@@ -849,6 +849,14 @@ fn hostile_params_never_panic() {
         "density",
         "names",
         "references",
+        "view",
+        "display_style",
+        "reference_style",
+        "reference_hides_model",
+        "reference_margin_mm",
+        "tangent_edges",
+        "sheet",
+        "position_mm",
     ];
     // Commands are independent; worker threads take them one at a time (their costs vary a lot).
     let ids: Vec<&str> = command_specs()

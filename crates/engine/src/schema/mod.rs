@@ -54,9 +54,11 @@ mod coverage_tests;
 mod tests;
 
 // The contracts, by command file.
+pub mod drawing_view;
 pub mod features;
 pub mod inspect;
 
+pub(crate) use check::read;
 pub use check::{Contract, Issue, ParamCheck, TypedContract, input_schema_for, output_schema_for, run_checked, run_checked_as};
 pub use types::*;
 
