@@ -189,6 +189,20 @@ pub struct ExtentsResult {
     pub provenance: &'static str,
 }
 
+/// A view's lines on its own plane, in model millimetres: polylines, so a circle is one run.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct LinesResult {
+    /// Runs of points; each run is one connected stretch of visible line.
+    pub visible: Vec<Vec<[f64; 2]>>,
+    /// The stretches a nearer surface covers, for a dashed style.
+    pub hidden: Vec<Vec<[f64; 2]>>,
+    /// How far a curved face may lie from the lines drawn for it.
+    pub chord_mm: f64,
+    /// `approximate`: sampled from the display mesh to within `chord_mm`.
+    pub status: &'static str,
+    pub provenance: &'static str,
+}
+
 /// A box on the sheet, in paper millimetres.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct BoxResult {
@@ -235,6 +249,7 @@ pub struct SnapshotResult {
     pub display_style: String,
     pub reference_style: String,
     pub extents: ExtentsResult,
+    pub lines: LinesResult,
     /// The view's box on the sheet: `position_mm` at its centre, the extents at the scale.
     pub boundary_mm: BoxResult,
     pub source: SourceResult,

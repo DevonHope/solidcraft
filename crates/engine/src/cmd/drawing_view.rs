@@ -7,7 +7,7 @@
 
 use serde::Serialize;
 use serde_json::Value;
-use solidcraft_doc::drawing_view::ViewDirection;
+use solidcraft_doc::drawing_view::{TangentEdges, ViewDirection};
 use solidcraft_doc::{MAX_PLACEMENT_DEPTH, MAX_PLACEMENTS};
 use solidcraft_geom::drawing_sheet::{DrawingBorderProfile, Sheet};
 use solidcraft_geom::drawing_view::{PRESETS, Scale, ViewFrame};
@@ -16,7 +16,9 @@ use solidcraft_geom::{Aabb2, Vec2};
 
 use super::CommandSpec;
 use crate::params::bad;
-use crate::schema::drawing_view::{BoxResult, DPI_RANGE, ExtentsResult, ScaleResult, SnapshotParams, SnapshotResult, SourceResult, ViewResult};
+use crate::schema::drawing_view::{
+    BoxResult, DPI_RANGE, ExtentsResult, LinesResult, ScaleResult, SnapshotParams, SnapshotResult, SourceResult, ViewResult,
+};
 use crate::schema::{TypedContract, output_schema_for};
 use crate::{Result, Session};
 
@@ -28,7 +30,7 @@ pub static COMMANDS: &[CommandSpec] = &[CommandSpec::new(CMD, "Drawing View Snap
     .noundo()
     .contract(&CONTRACT)
     .output(output_schema_for::<SnapshotResult>)
-    .params("view?: front (default), back, top, bottom, left, right, iso (= iso_front_right), iso_front_left, iso_back_right, iso_back_left, or {direction, up, origin?}; scale?: \"paper:model\" such as \"1:2\" (default: the largest ISO 5455 scale that fits the sheet's drawing area); position_mm?: [x, y] for the view's centre on the sheet (default the sheet's centre); sheet?: {size: {standard: a3} or {custom: {sides_mm: [w, h]}}, orientation?: landscape|portrait, dpi?: 25..2400} (default A3 landscape, 300 dpi); display_style?, reference_style?: visible (default) or visible_hidden (the shaded styles aren't supported yet); reference_hides_model?: false; reference_margin_mm?: 0..100000 model mm on every side; tangent_edges?: hide (default) or show. Every body the design places, whatever the browser shows. Returns {view, scale: {text, factor, fitted}, position_mm, sheet, extents (model mm on the view's plane), boundary_mm (on the sheet), source}. Read-only: saves nothing.")];
+    .params("view?: front (default), back, top, bottom, left, right, iso (= iso_front_right), iso_front_left, iso_back_right, iso_back_left, or {direction, up, origin?}; scale?: \"paper:model\" such as \"1:2\" (default: the largest ISO 5455 scale that fits the sheet's drawing area); position_mm?: [x, y] for the view's centre on the sheet (default the sheet's centre); sheet?: {size: {standard: a3} or {custom: {sides_mm: [w, h]}}, orientation?: landscape|portrait, dpi?: 25..2400} (default A3 landscape, 300 dpi); display_style?, reference_style?: visible (default) or visible_hidden (the shaded styles aren't supported yet); reference_hides_model?: false; reference_margin_mm?: 0..100000 model mm on every side; tangent_edges?: hide (default); show isn't supported yet. Every body the design places, whatever the browser shows. Returns {view, scale: {text, factor, fitted}, position_mm, sheet, extents (model mm on the view's plane), lines: {visible, hidden: runs of [x, y] on the view's plane, chord_mm}, boundary_mm (on the sheet), source}. Read-only: saves nothing.")];
 
 fn snapshot(s: &mut Session, p: &Value) -> Result<Value> {
     let request: SnapshotParams = crate::schema::read(CMD, p)?;
@@ -36,6 +38,11 @@ fn snapshot(s: &mut Session, p: &Value) -> Result<Value> {
     let basis = settings.validate().map_err(|e| bad(CMD, e.to_string()))?;
     if settings.display_style.is_shaded() || settings.reference_style.is_shaded() {
         return Err(bad(CMD, "not supported yet: shaded views need the drawing renderer (#5624)"));
+    }
+    // The mesh carries the placed body's own edge choices, so there is no switch to turn tangent
+    // edges back on; refuse rather than quietly drawing them hidden.
+    if settings.tangent_edges == TangentEdges::Show {
+        return Err(bad(CMD, "not supported yet: tangent_edges show needs the mesh edge classification (#5866)"));
     }
     if !(request.sheet.dpi.is_finite() && DPI_RANGE.contains(&request.sheet.dpi)) {
         return Err(bad(CMD, format!("sheet.dpi is a number from {} to {}", DPI_RANGE.start(), DPI_RANGE.end())));
@@ -65,6 +72,9 @@ fn snapshot(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(CMD, format!("at scale {scale} the view reaches past ±{MAX_COORDINATE_MM} mm on paper: choose a smaller scale")));
     }
 
+    let chord = crate::drawing_view::chord_mm(scale.factor());
+    let lines = crate::drawing_view::lines(s, CMD, &basis, chord)?;
+
     let named = match settings.view {
         ViewDirection::Named(view) => Some(snake_name(view)),
         ViewDirection::Looking(_) => None,
@@ -87,6 +97,13 @@ fn snapshot(s: &mut Session, p: &Value) -> Result<Value> {
             min: extents.model.min.into(),
             max: extents.model.max.into(),
             error_mm: extents.error_mm,
+            status: "approximate",
+            provenance: "display_mesh",
+        },
+        lines: LinesResult {
+            visible: lines.visible.iter().map(|run| run.iter().map(|p| (*p).into()).collect()).collect(),
+            hidden: lines.hidden.iter().map(|run| run.iter().map(|p| (*p).into()).collect()).collect(),
+            chord_mm: lines.chord_mm,
             status: "approximate",
             provenance: "display_mesh",
         },

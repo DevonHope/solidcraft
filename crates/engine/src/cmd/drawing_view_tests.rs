@@ -172,3 +172,51 @@ fn a_view_of_an_assembly_past_the_walks_limit_is_refused() {
     let e = refused(&mut s, json!({"scale": "1:1"}));
     assert!(e.contains("deeper than 64 levels or has more than 100000 placements"), "{e}");
 }
+
+#[test]
+fn the_chord_follows_the_scale_and_stays_in_its_range() {
+    let chord = crate::drawing_view::chord_mm;
+    // 0.01 mm on the sheet, divided by the scale.
+    assert!((chord(1.0) - 0.01).abs() < EPS, "{}", chord(1.0));
+    assert!((chord(0.5) - 0.02).abs() < EPS, "1:2 samples twice as coarsely: {}", chord(0.5));
+    assert!((chord(100.0) - 0.0001).abs() < EPS, "100:1 reaches the fine end: {}", chord(100.0));
+    // Past either end it is clamped, so `prepare` never sees a tolerance it refuses.
+    assert!((chord(1000.0) - 0.0001).abs() < EPS, "{}", chord(1000.0));
+    assert!((chord(0.001) - 1.0).abs() < EPS, "{}", chord(0.001));
+    for broken in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        assert!((chord(broken) - 1.0).abs() < EPS, "{broken} gave {}", chord(broken));
+    }
+}
+
+#[test]
+fn a_snapshot_returns_the_views_lines_chained_into_polylines() {
+    let mut s = block();
+    let reply = snap(&mut s, json!({"scale": "1:1"}));
+    let lines = &reply["lines"];
+    assert_eq!(lines["status"], "approximate");
+    assert_eq!(lines["provenance"], "display_mesh");
+    assert!((lines["chord_mm"].as_f64().unwrap() - 0.01).abs() < EPS);
+    let runs = |which: &str| lines[which].as_array().expect("lines are runs of points").clone();
+    let visible = runs("visible");
+    assert!(!visible.is_empty(), "the front view of a block has visible lines");
+    // Chaining is the point: loose segments would leave every run two points long.
+    let longest = visible.iter().map(|r| r.as_array().map_or(0, Vec::len)).max().unwrap_or(0);
+    assert!(longest > 2, "the block's outline was left as loose segments: longest run {longest}");
+    // Every point is a pair of finite model millimetres on the view's plane.
+    for run in visible.iter().chain(runs("hidden").iter()) {
+        for point in run.as_array().expect("a run is a list of points") {
+            let p = point.as_array().expect("a point is [x, y]");
+            assert_eq!(p.len(), 2, "{point}");
+            assert!(p.iter().all(|v| v.as_f64().is_some_and(f64::is_finite)), "{point}");
+        }
+    }
+}
+
+#[test]
+fn showing_tangent_edges_is_refused_while_the_mesh_decides_them() {
+    let mut s = block();
+    let e = refused(&mut s, json!({"scale": "1:1", "tangent_edges": "show"}));
+    assert!(e.contains("not supported yet: tangent_edges show"), "{e}");
+    // The default still works, so the refusal is the option's and not the command's.
+    snap(&mut s, json!({"scale": "1:1", "tangent_edges": "hide"}));
+}

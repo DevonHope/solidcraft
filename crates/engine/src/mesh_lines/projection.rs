@@ -2,7 +2,7 @@
 //! its depth plane, then union occluded parameter intervals. A BVH bounds the candidate work.
 #[cfg(test)]
 use solidcraft_geom::Mesh;
-use solidcraft_geom::{Aabb3, Vec2, Vec3};
+use solidcraft_geom::{Aabb3, Plane, Vec2, Vec3};
 use solidcraft_render::Camera;
 use std::collections::BTreeMap;
 
@@ -46,6 +46,32 @@ impl View {
     pub(crate) fn from_camera(cam: &Camera) -> Self {
         let (right, up, back) = cam.basis();
         Self { origin: cam.target, right, up, back, perspective: (cam.fov > 0.).then_some(cam.distance) }
+    }
+
+    /// A drawing view's basis (#4817's `NamedView::basis`): its x is right, its y is up, and it
+    /// looks along its normal with no perspective, so a face seen edge-on projects to an exact
+    /// line. Going through [`View::from_camera`] instead tilts the top and bottom views by about
+    /// 1e-6 rad, which leaves stray stubs along vertical edges.
+    ///
+    /// The basis is checked, not squared up: it comes from a saved view record, and axes that are
+    /// not unit length and square would scale the depth `project` returns, so [`View::depth_eps`]
+    /// would no longer mean what it says.
+    pub(crate) fn orthographic(plane: &Plane) -> Result<Self, &'static str> {
+        // Looser than the 1e-16 `basis_looking` reaches, tight enough that the depth scale and
+        // `depth_eps` still agree to within the 1e-8 the occlusion tests use.
+        const SQUARE: f64 = 1e-9;
+        let (right, up) = (plane.x, plane.y);
+        if !plane.origin.is_finite() || !right.is_finite() || !up.is_finite() {
+            return Err("a view's basis is not finite");
+        }
+        if (right.len() - 1.).abs() > SQUARE || (up.len() - 1.).abs() > SQUARE {
+            return Err("a view's basis axes are not unit length");
+        }
+        if right.dot(up).abs() > SQUARE {
+            return Err("a view's basis axes are not square to each other");
+        }
+        // x cross y, so it points at the eye, as `from_camera`'s back does.
+        Ok(Self { origin: plane.origin, right, up, back: plane.normal(), perspective: None })
     }
 
     /// `p` in the view: right and up, and a depth that grows toward the eye (the distance
@@ -371,5 +397,33 @@ mod tests {
         assert!(occluded(Vec3::new(0., 0.5, 2.), Vec3::new(1., 0.5, 2.), t, 0.).is_none());
         let (lo, hi) = occluded(Vec3::new(0., 0.5, 0.), Vec3::new(1., 0.5, 2.), t, 0.).unwrap();
         assert!(lo.abs() < 1e-9 && (hi - 0.5).abs() < 1e-9);
+    }
+    #[test]
+    fn an_orthographic_view_sees_a_face_edge_on_as_an_exact_line() {
+        // Plane::XY is the Top view. A vertical face's points differ only in z, so from the top
+        // they fall on one line; the camera path's 1e-6 rad tilt spreads them by about 5e-6 and
+        // leaves a stub on each vertical edge.
+        let top = View::orthographic(&Plane::XY).expect("a named view's basis is orthonormal");
+        let (low, high) = (top.project(Vec3::new(1., 2., 0.)).unwrap(), top.project(Vec3::new(1., 2., 5.)).unwrap());
+        assert_eq!((low.x, low.y), (high.x, high.y), "a face seen edge-on spread across the sheet");
+        assert_eq!((low.x, low.y), (1., 2.), "right and up are the plane's own x and y");
+        // back is x cross y = +Z, so the higher point is the nearer one.
+        assert!(high.z > low.z, "depth must grow toward the eye, or visible and hidden swap");
+        // The Front view looks along -Y, so -Z is up on the sheet and a nearer point has larger y.
+        let front = View::orthographic(&Plane::XZ).expect("a named view's basis is orthonormal");
+        let near = front.project(Vec3::new(0., 3., 0.)).unwrap();
+        assert!(near.z > front.project(Vec3::new(0., -3., 0.)).unwrap().z);
+    }
+    #[test]
+    fn an_orthographic_view_refuses_a_basis_that_would_scale_its_depth() {
+        let bad = |x: Vec3, y: Vec3| View::orthographic(&Plane { origin: Vec3::ZERO, x, y }).map(|_| ()).unwrap_err();
+        assert_eq!(bad(Vec3::X * 2., Vec3::Y), "a view's basis axes are not unit length");
+        assert_eq!(bad(Vec3::X, Vec3::new(1., 1., 0.)), "a view's basis axes are not unit length");
+        assert_eq!(bad(Vec3::X, Vec3::new(1., 1., 0.).normalized().unwrap()), "a view's basis axes are not square to each other");
+        assert_eq!(bad(Vec3::new(f64::NAN, 0., 0.), Vec3::Y), "a view's basis is not finite");
+        assert_eq!(
+            View::orthographic(&Plane { origin: Vec3::new(f64::INFINITY, 0., 0.), x: Vec3::X, y: Vec3::Y }).map(|_| ()).unwrap_err(),
+            "a view's basis is not finite"
+        );
     }
 }
