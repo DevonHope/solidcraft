@@ -19,12 +19,12 @@ Times in the log are local time on the machine that did the work, with the UTC o
 | | |
 |---|---|
 | **Last updated** | 2026-10-28, on the Mac (machine B, see [Machines](#machines)) |
-| **Branch** | `beta/drawings` at **62eab387**, two commits on top of 3bf352b7. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
+| **Branch** | `beta/drawings`: **43ee8f7d** is the last code commit, with this status update on top of it, three commits over the fc7203bd that was already pushed. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
-| **Pushed?** | **Yes**, through **62eab387**, to the fork as `origin/beta/drawings` on 2026-10-28 with the owner's OK ("Push to the fork"). Another machine gets everything with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
-| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Its first two items — Exact view basis and View lines — are done, committed and pushed ([§8.2](#82-phases-26-full-task-lists)). |
+| **Pushed?** | **Yes**, everything through this status update, to the fork as `origin/beta/drawings` on 2026-10-28 with the owner's OK ("Push to the fork"). It had been at fc7203bd; this push adds the standard layout and the paper scene builder. Another machine gets everything with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
+| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Four of its seven items are done: Exact view basis and View lines (pushed), Standard layout and the Paper scene builder (committed, not pushed) ([§8.2](#82-phases-26-full-task-lists)). |
 | **Running** | Nothing. |
-| **Next action** | Phase 2's remaining items, in the plan's order: **Standard layout**, then the **Paper scene builder**, the rest of the **view commands**, **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
+| **Next action** | Phase 2's remaining items, in the plan's order: the **Drawing session and Records** the view commands need, then the **view commands** themselves, **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
 | **Blockers** | None. |
 
 ---
@@ -195,6 +195,10 @@ git switch beta/drawings
 
 ## 5. Working rules agreed with the owner
 
+- **Never restore a mutation-test backup with `cp -p`.** It keeps the backup's mtime, which is
+  older than the mutated file, so cargo decides the crate is unchanged and silently reuses the
+  **mutated** build. Seen 2026-10-28: one geom test "failed" after a restore, then passed once
+  `cargo fmt` touched the file. Use plain `cp`, or `touch` the file after restoring.
 - **After each phase, install the app again** (owner, 2026-10-28). Build with
   `packaging/macos/package.sh --arch aarch64`, then copy `SolidCraft.app` from the DMG into
   `/Applications` with `ditto`. Each round is about 16 minutes and about 7 GB of `target`.
@@ -802,7 +806,9 @@ say "approximate (mesh)".
   - `Session.drawing: Option<Box<DrawingFile>>` and `Snapshot.drawing`, so undo works per file;
   - the per-command `Files` gate (Design, Drawing or Any);
   - `DrawingFile`, holding the source part as a nested session (Open, Missing or Unreadable);
-  - `.scdwg` in `doc.open`, `file.save` and `file.save_as`.
+  - ~~`.scdwg` in `doc.open`, `file.save` and `file.save_as`~~ — **dropped with D1 on 2026-10-27.**
+    A drawing lives inside the design's file, so there is no second file to open or save: the
+    drawing rides on `doc.open`, `file.save` and `file.save_as` as they already are.
   - Defer relink, locate and `source.execute`.
   - Keep #3891's ids: `drawing.create`, `drawing.inspect`, `drawing.set`, `drawing.properties.set`.
   - Add input and output schemas, which #3891 lacks. The pattern is `CommandSpec::new(...).contract(&C).output(output_schema_for::<T>)`; see `engine/src/cmd/features.rs:41`.
@@ -819,11 +825,12 @@ say "approximate (mesh)".
   - Chain the pieces into polylines.
   - Add `lines` and `status: approximate` to `drawing.view.snapshot`.
   - Chord = 0.01 mm on paper ÷ scale, clamped to 1e-4..1 mm. Add an option to show tangent edges.
-- [ ] **Standard layout.** A pure function in geom:
+- [x] **Standard layout.** Done 2026-10-28 (machine B), uncommitted. A pure function in geom:
   - fit the scale with `Scale::fit`;
   - place the projected views first- or third-angle, aligned on shared axes;
   - put the iso view in the free corner, clear of the title block.
-- [ ] **Paper scene builder.**
+- [x] **Paper scene builder.** Done 2026-10-28 (machine B), uncommitted. `drawing_paper` in geom; the
+  note below records the two findings (the block's box, and the thinning's cost).
   - The sheet and border come from `SheetLayout`; nothing draws them yet.
   - The title block comes from #3877's `TitleBlock::layout`, plus **one built-in block of our own design**.
   - Add `ObjectKind::View`, `Dimension` and `Note`.
@@ -842,6 +849,108 @@ say "approximate (mesh)".
   - A changed source marks views out of date.
   - `drawing.update` recomputes on the file worker, like `Kind::ExportDxf`. Never on the window thread; wasm runs it serially.
 - [ ] **SVG export.** `drawing.export {format: "svg", path, sheet?}` through the existing paper SVG writer.
+
+**Paper scene builder — done on machine B, 2026-10-28, not yet committed.**
+
+`drawing_paper` in geom: `scene(sheet, title_block, views)` turns a laid-out `SheetLayout`, a
+`TitleBlockLayout` and each view's runs into a `paper::Scene`. It composes laid-out geometry only
+and works nothing out for itself, so `drawing_sheet`, `title_block` and `drawing_view` stay the
+single places that decide where anything goes. Nothing is ordered by a hash, so two runs give the
+same scene — what the phase's done-when asks for.
+
+Added with it: `ObjectKind::View`, `Dimension` and `Note`, and `ObjectKind::ALL`, because
+`each_kind_names_its_layer_in_the_capitals_of_its_id` is a hand-written list that would have gone
+on passing with the three new kinds missing. It now checks its list against `ALL`.
+
+**`TitleBlock::built_in()`** is the S2 plan's 180 x 54 mm block, moved out of
+`title_block_tests.rs` (where it was already written, as test data) and into the type beside
+`DrawingBorderProfile::iso()`. The test now calls it, so the 14 title-block tests measure the
+built-in rather than a copy of it, and `a5_landscape_holds_the_block_and_a5_portrait_is_too_narrow`
+already says which sheets it fits. Its labels are **text in the definition, not message ids**: a
+block is a saved template a user edits, its words are part of the drawing rather than part of the
+app, and #3877 already made `Label.text` a `String` in a saved record. So the ui-text rule's
+`assets/locales/pending/` does not apply here.
+
+**Finding 1: the box to keep clear has to be clipped to the drawing border.** `kept_clear` grows
+the block's outline by half the line drawn on it — and the block *sits on* the border, so its
+right and bottom edges lie along the border's and that half-line falls outside the drawing area.
+`standard_layout` refused it: "the space a standard layout keeps clear lies inside the drawing
+border". The layout tests had used a hand-built box, so nothing tied the layout to the block that
+actually gets drawn. `kept_clear(block, border)` now takes the border and intersects with it, and
+`the_standard_views_fit_beside_the_built_in_block_on_its_own_sheet` composes the real built-in
+block, `standard_layout` and the scene, then checks all four views lie inside the border and off
+the block. That is the phase's done-when minus the SVG writer.
+
+**Finding 2: Douglas-Peucker is quadratic exactly where the scene is already too big.** Thinning
+to paper tolerance (0.01 mm, the same chord the lines are sampled to, so the two together stay
+inside 0.02 mm) measured on 100,000-point runs:
+
+| run | before | pieces kept |
+|---|---|---|
+| circle, radius 50 mm | 1.8 ms | 256 |
+| straight line | 0.3 ms | 1 |
+| zigzag 0.2 mm deep, nothing thins | **8 s** | refused by the record cap |
+
+The walk splits off one point at a time when every point is a corner. The slow case is therefore
+the case that gets refused anyway, but eight seconds to then refuse is a cost hostile input should
+not get. It now gives up after 64 points looked at for each point of the run (`WORK_PER_POINT`)
+and **keeps what it has not looked at as it came**: an unthinned run is the run it came from, so
+accuracy never suffers, and the scene's own record count decides. The zigzag went 8 s -> 19 ms,
+and the circle and the line are unchanged.
+
+Four mutations, all caught:
+
+| mutation | caught by |
+|---|---|
+| `off_chord` always divides by the chord's length | the closed circle (NaN collapses it) and the square |
+| visible lines painted before the hidden ones | the paint-order assertion, which shows the swap |
+| the thinning drops the spans it gave up on | 65 pieces instead of 49,999 — silent corruption |
+| a run never comes back closed | both `closed` assertions |
+
+The second mutation is why hidden lines are painted **first**: paint order is item order, so a
+visible line has to win wherever the two fall together. The title block is the same idea the other
+way up — cells first, then the outline over them, so the outline's wider line finishes the block's
+edges where a cell lies against them.
+
+**What is deliberately not drawn: text.** The paper scene has no text yet ("Text, clips and styles
+are later additions"), so the grid's labels, the block's labels and values, and the projection
+symbol are all absent. The geometry for all of them is in hand; only glyph outlines (D3) are
+missing. Say so when the SVG lands, or the first picture will look wrong rather than unfinished.
+
+Verified: 309 geom lib tests pass (10 of them new), clippy `--all-targets` is silent, `cargo fmt`
+is clean. `cargo xtask ci` ran over this and the standard layout
+together, since geom is layer 0 and one gate covers both: every gate passes (fmt, render assets,
+assets, icons, licences, lists, skills, layers, ui-containers, clippy `-D warnings`) and 80 of 82
+test binaries pass, the geom one with all 309. The 4 failures are inherited — the 3 macOS kernel
+ones with values identical to the previous run, and the Arabic catalog's missing `cmd.drawing_*`
+ids, which is new to this log but older than this branch's work ([§8.6](#86-known-problems-and-fixes)).
+
+**Standard layout — done on machine B, 2026-10-28, not yet committed.**
+
+`standard_layout`, `StandardExtents` and `StandardLayout` in `geom/src/drawing_view.rs`, beside
+the types they compose. #4817 already gave `ProjectedSide`, `Projection`, `projected_basis` and
+`ViewFrame::aligned`, so this is only the arrangement: one scale for all four views, and the four
+positions.
+
+**The plan's wording for this item is incomplete, and the test proves it.** It says "put the iso
+view in the free corner, clear of the title block", which guards only the iso. The title block
+sits bottom-right, and the view that lands there is **the right view in third angle and the top
+view in first angle** — the iso is not the problem. Removing the guard fails the test with
+`A3 Landscape First: the top view lands on the title block`. So the layout fits the grid into the
+largest band of the border beside the box to keep clear (four candidates: left of it, right of it,
+below, above), which holds whichever corner the block is in, and it changes the scale — A3
+landscape with a 350 x 250 mm grid goes from 1:1 to 1:2 rather than overlapping.
+
+Also recorded: the content is front, top and right in **both** projections; only the cells move
+(third angle puts the top above and the right to the right, first angle below and to the left,
+since a first-angle view sits on the side away from the one it looks from). #5866 and #4816 are
+both silent on this, so it follows the phase's done-when, which names "front, top, right and iso".
+The test asserts the resulting bases against #4817's `NamedView` table in both projections, so a
+swapped side cannot pass.
+
+Verified: 299 geom lib tests pass, clippy `--all-targets` is silent, `cargo fmt` is clean, and the
+title-block guard is mutation-checked. `cargo xtask ci` has **not** been run — geom is layer 0, so
+it rebuilds everything below it and is close to a full 54-minute gate.
 
 **Phase 2, the first two items — done on machine B, 2026-10-28, not yet committed.**
 
@@ -1104,6 +1213,7 @@ with the owner's explicit OK. Each claim was verified by reading the merged code
 | An auto-merge silently drops `main` code. | Review the auto-merged hunks in each conflicted file, not only the conflict markers. |
 | The web offline test is skipped. | Chrome isn't installed on the laptop. |
 | **3 engine tests fail on macOS** (machine B) at b0f2a86e: `prism_local_tests::a_ring_cut_round_a_counterbored_hole_in_a_chamfered_disc`, and `robustness_goldens` seeds **36** and **71**. | **Platform divergence in the kernel, not the merges.** Seed 36 is proven: macOS produces the **Windows** golden to six decimals (area 9964.083286 against 9964.083285, faces 21, edges 45, the same lumps error), and `tests/robustness/goldens.json` carries `platforms` overrides for **windows only**, so macOS falls back to the Linux-recorded shared value. Seed 71 differs in area by 0.0002% with faces 20→19 and edges 52→50, a tolerance-driven topology flip; prism is 0.108% off a 0.1% tolerance. Neither test file was touched by any merge, `crates/kernel` and `crates/sketch` are byte-identical to the base, and #3891 changes no geom, kernel or sketch code. The one geometry change in the base is #4817's rewrite of `Seg2::polyline` through a new `chords()`, which is output-identical: the arc step's old `.max(1e-6)` could never bind, because `tol >= radius * 1e-6` forces the step above 2.8e-3, and the other branches apply the same `max(1e-9)` once instead of per branch. **Confirmed on the laptop, 2026-10-27, at 09c3052f: all three pass on Windows** (prism 4 s, seed 36 23 s, seed 71 7 s), so they are macOS-only. Recording macOS goldens is upstream's call, so none were blessed. |
+| **`every_complete_catalog_carries_every_english_message` fails** (ui-egui), on every platform, not only macOS. | **Inherited from upstream, not from this branch.** `assets/locales/ar.json` is missing the 11 `cmd.drawing_*` ids that **e0cb46c1** (#3890, "Drawing commands on the design's own drawings") added to `en.json`; Arabic is one of the five catalogs `COMPLETE` requires to carry every English message. Proven from the data rather than by a comparison run: the test reads the two catalogs and no code at all (`crates/ui-egui/src/i18n.rs:455`), at HEAD `en.json` already has all 11 and `ar.json` none, and nothing in this branch's working tree touches a locale file. **It will fail on the laptop too**, so the "3 macOS failures" line above is 3 of 4, and this is the one that is not macOS-only. Fixing it means writing Arabic for eleven command labels, which is upstream's to do (D5): report it on the owner's issue rather than translating for them. |
 | **Owed on a machine with the headroom** (the laptop): **all done 2026-10-27.** | `cargo xtask wasm`: 12 crates build, no new warnings. CLI `run_results`: 18 passed. Clippy on geom, doc, render, io, engine and ui-egui with all targets: only the two Windows-only warnings `main` has. The three tests above pass. |
 | The dev window title says "v0.24.0" (before the `main` merge) or "v0.25.1" (after it, 51f0c2d0). | Expected: it is `main`'s version number, which can match an installed release. Tell the windows apart by the port (27900) and the data folder. |
 | The dev build opens with "Recover unsaved design?" | A launch check closed with `app.quit {force: true}` left an autosave in `SolidCraft-dev\recovery`. Press Discard. Only the dev data folder is affected. |
