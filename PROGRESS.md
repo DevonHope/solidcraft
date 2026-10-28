@@ -18,13 +18,13 @@ Times in the log are local time on the machine that did the work, with the UTC o
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-27 afternoon, on the Mac (machine B, see [Machines](#machines)) |
-| **Branch** | `beta/drawings`: **b0f2a86e**. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
+| **Last updated** | 2026-10-27 evening, on the laptop (machine A, see [Machines](#machines)) |
+| **Branch** | `beta/drawings`: the Phase 1 notes commit on top of **4f18ddea**. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
-| **Pushed?** | **Yes**, the whole branch, to the fork as `origin/beta/drawings` (DevonHope/solidcraft), on 2026-10-27 with the owner's OK. Another machine gets everything with `git pull` (§3). **Agents: confirm with the owner before each later push.** |
-| **Phase** | **Phase 1 of 6 (integration base): all but #5867 merged.** |
+| **Pushed?** | **Partly.** The fork has everything up to a5be5764. The laptop's session-4 commits (09c3052f, 3232bbb0, 4f18ddea and these notes) are **local only** until the owner OKs a push. **Agents: confirm with the owner before each push.** |
+| **Phase** | **Phase 1 of 6 (integration base): DONE** on 2026-10-27. Every PR in the stack is merged, the 10 `drawing.*` commands have schemas, every check the Mac left for the laptop passes, and the app starts and runs the drawing commands ([§2](#2-progress-checklist)). |
 | **Running** | Nothing. |
-| **Next action** | **Re-fetch #5867's head first**: it was force-pushed once on 2026-10-27 (its old head 5bb34f49 no longer exists) and last changed at 10:42 UTC, so compare it with §8.7 before merging. Then merge it, adapt its 3-argument `checked!` call site to `main`'s 2-argument macro, and write the contracts the 10 new `drawing.*` commands lack ([§6.6](#66-contracts-owed)). |
+| **Next action** | **Merge upstream `main` into `beta/drawings`**: the owner chose to finish Phase 1 first, then merge `main`. On 2026-10-27 the branch was 144 commits behind `main` (9fb41f83), and a dry run conflicts in 5 files, every one additive ([§6.9](#69-merge-upstream-main-measured-2026-10-27)). Then **Phase 2** ([§8.2](#82-phases-26-full-task-lists)). |
 | **Blockers** | None. |
 
 ---
@@ -48,7 +48,7 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` not started.
   - **Not run:** wasm, the full test suite and doc tests. They were stopped because the laptop was overloaded.
   - **Skipped:** the web offline test, because Chrome isn't installed.
 
-### Phase 1: integration base (in progress)
+### Phase 1: integration base (done, 2026-10-27)
 **Done when:** the branch builds, the app starts, and the existing tests pass. No new behaviour yet.
 - [x] Created `beta/drawings` from `upstream/main` 23734142.
 - [x] Merged `upstream/drawings` (f18616e1) as **c4434126**. All 8 conflicting files are resolved ([§8.3](#83-how-the-drawings-merge-was-resolved-c4434126)).
@@ -63,7 +63,7 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` not started.
   overnight, so taking the branch brings all three ([§6.1](#61-merge-the-new-upstreamdrawings-done)).
   24 conflict regions in 7 files, all from this branch holding #4817's older head.
 - [x] `cargo build -p solidcraft` on macOS: clean, 3 m 55 s. fmt, lists and skills pass.
-- [ ] **Decide the drawing storage model** before #3891 ([§6.2](#62-decide-3891-the-owners-call)). Upstream
+- [ ] **Decide the drawing storage model** before #3891 ([§6.2](#62-decide-3891-decided-on-2026-10-27--follow-upstream)). Upstream
   dropped the separate drawing file; the beta's D1 and item 6 assume `.scdwg`.
 - [x] **The owner chose to follow upstream** on 2026-10-27, so the beta takes in-design storage and
   `.scdwg` is gone. D1 and beta item 6 are superseded ([§8.1](#81-what-beta-means-and-the-decisions)).
@@ -72,15 +72,28 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` not started.
 - [x] Merged **#7430** (1aaff713, fe8dd804), dashes and PNG: only `Cargo.lock` and `crates/io/Cargo.toml`.
 - [x] Merged **#3891** (36cf48a3, 69261367): 20 regions in 9 files. See the commit message.
 - [x] A regression test for the `user_materials` cap (b0f2a86e), proved by mutation.
-- [ ] Merge #6788 (c70ec84e, tolerance text). Optional.
-- [ ] Merge **#5867** (cce39b40). Fix its `checked!` mismatch: `main`'s macro at
-  `crates/engine/src/schema/mod.rs:69` takes **2** arguments (`$id:literal, $handler:path`), and
-  cce39b40 replaces it with a 3-argument form. Keep main's macro and change the one call site in
-  `engine/src/cmd/drawing_view.rs` to `checked!("drawing.view.snapshot", snapshot)`, with
-  `.contract(&CONTRACT)` on the CommandSpec, which is how `inspect.rs` was resolved.
-- [ ] Write the contracts the 10 new `drawing.*` commands lack ([§6.6](#66-contracts-owed)).
-- [ ] Launch-check the dev app, take a screenshot over the control channel, then close the app.
-- [ ] Record the base in `BETA-BASE.md`: every merged SHA, in order.
+- [x] Merged **#5867** (cce39b40, unchanged since the Mac's re-fetch) as **09c3052f** on the
+  laptop: 4 regions in 4 files, all additive. Its one 3-argument `checked!` call site now uses
+  `main`'s 2-argument macro; the spec already had `.contract(&CONTRACT)`.
+- [x] Wrote the schemas for the 10 `drawing.*` commands (**3232bbb0**, [§6.6](#66-contracts-owed)).
+  The coverage test's list of commands without schemas went from 30 to 20; the 20 left predate
+  this branch.
+- [x] Merged **#6788** at its new head **9e6b1bb2** as **4f18ddea**: clean. The author's update
+  fixes both findings from our review (§8.5).
+- [x] The checks the Mac left for the laptop (§8.6) all pass on Windows:
+  - `cargo xtask wasm`: 12 crates build, with no warnings `main` doesn't already have;
+  - the CLI test `run_results`: 18 passed;
+  - clippy on geom, doc, render, io, engine and ui-egui with all targets: only the two Windows-only
+    warnings `main` already has;
+  - the three tests that fail on macOS pass here: prism `a_ring_cut…` (4 s), robustness seeds 36
+    (23 s) and 71 (7 s);
+  - `hostile_params_never_panic` passes (577 s, pinned to 4 cores).
+- [x] `cargo build -p solidcraft`, then a launch check over the control channel on port 27900 with a
+  copy of `plate-two-bores`. drawing.list, two drawing.view.snapshot calls (front fitted at 2:1,
+  top at 1:1), drawing.create, drawing.properties.set, drawing.inspect, drawing.close and
+  engine.describe (which serves the new schemas) all answer. Screenshot taken, then the app quit
+  with `app.quit {force: true}`.
+- [x] `BETA-BASE.md` lists every merged SHA in order.
 
 ### Phases 2–6 (not started)
 - [ ] **Phase 2:** headless drawing core: session, records, views, layout, paper scene, commands, Update, SVG.
@@ -90,6 +103,12 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` not started.
 - [ ] **Phase 6:** hardening: tests, hostile parameters, a scenario, screenshots, performance, docs.
 
 Full task lists are in [§8.2](#82-phases-26-full-task-lists).
+
+### Phase 7: Arrange (after the drawings beta)
+- [ ] **Arrange the cut pieces for making them.** Lay out every piece either flat on stock sheets
+  for a CNC machine (2D: router, laser, plasma, waterjet), or by its footprint on a 3D printer's
+  build plate. Asked for by the owner on 2026-10-27, to come **after drawings are in the
+  package**. Plan, related upstream work and open questions: [§8.8](#88-arrange-planned-after-drawings).
 
 ---
 
@@ -206,6 +225,28 @@ git switch beta/drawings
   Use `setopt pipefail`, or judge a run by its output.
 - **Disk.** A shared `CARGO_TARGET_DIR` across two checkouts reached 51 GB, 36 GB of it
   `target/debug/incremental`, which is regenerable cache.
+- **Never filter on `robustness_goldens` alone.** It matches **104 tests**, one per robustness
+  seed, and some seeds take minutes each; upstream CI spreads them over shards. On the laptop
+  that filter ran for 40 minutes before it was stopped. Name the seeds:
+  `robustness_goldens::seed_36`. Test filters are substrings, so check what a filter matches with
+  `<test binary> --list | grep -c <filter>` before running it.
+- **`hostile_params_never_panic` starts one thread per core** (16 on the laptop), whatever
+  `RUST_TEST_THREADS` says. It takes about 10 minutes. On Windows, run the test binary directly
+  with its process pinned to 4 cores at below-normal priority (PowerShell: `Start-Process …
+  -PassThru`, then `.ProcessorAffinity = 0xF` and `.PriorityClass = "BelowNormal"`).
+- **The test binary can be run directly** once built
+  (`target/debug/deps/solidcraft_engine-<hash>.exe --test-threads=2 <filters…>`, from
+  `crates/engine`): no cargo, no rebuild, several filters at once.
+- **Laptop build times at 4 jobs:** the engine `--lib` test binary about 13 minutes from a change
+  in engine (5 minutes for a small change), `cargo build -p solidcraft` about 10 minutes, the CLI
+  test `run_results` about 17 minutes, `cargo xtask wasm` about 1 minute when warm.
+- **PowerShell 5.1 strips the double quotes** from JSON passed to a native program, so
+  `control.py` calls with JSON arguments go through Git Bash, not PowerShell.
+- **Synology Drive syncs the laptop's repo folder, `target/` included** (the Mac saw the laptop's
+  Windows binaries in the NAS copy). That copies tens of GB of build output to the NAS and likely
+  explains cargo's "hard linking files in the incremental compilation cache failed" warnings.
+  **Owner's call:** exclude `target` from the sync in Synology Drive's settings. Agents don't
+  change it.
 - **Never touch the installed release.** Never change system or security settings: PowerShell's execution policy stays Restricted, so use `.cmd` launchers.
 - **Project rules (AGENTS.md):**
   - Clean room: no GPL, LGPL or AGPL code, not even reading it (OpenCASCADE, FreeCAD, SolveSpace, CadQuery, LibreCAD, QCAD), and nothing copied from other CAD products.
@@ -303,11 +344,20 @@ accept that the beta diverges from upstream's file format, which makes it hard t
 - The earlier research found it conflicts only in `crates/engine/src/cmd/view_dxf.rs`.
 - Test with `cargo test -p solidcraft-engine view_dxf`.
 
-### 6.5 Merge #5867, then optionally #6788 (tolerance text)
-- Merge `prs/pr-6788`.
-- Our review found two problems ([§8.5](#85-reviews-posted-upstream)). Check whether the author has fixed them before relying on it.
+### 6.5 Merge #5867, then #6788 — done, 09c3052f and 4f18ddea
+- #5867 (cce39b40): 4 additive regions, in `engine/src/lib.rs` and `render/src/lib.rs` (`mod`
+  lines), `engine/src/schema/mod.rs` (exports) and `engine/src/tests.rs` (the hostile-parameter key
+  list). The commit message records each.
+- #6788 (9e6b1bb2): clean. The author answered our review with this head, and asked the owner on
+  2026-10-27 to look again (§8.5).
 
-### 6.6 Contracts owed
+### 6.6 Contracts owed — done, 3232bbb0
+
+**Done on the laptop, 2026-10-27:** `crates/engine/src/schema/drawing.rs` (with
+`drawing_tests.rs`) holds a parameters type and a reply type for each of the ten commands, and
+`cmd/drawing.rs` registers them and builds its replies from the reply types. The JSON is unchanged,
+and the existing drawing tests pass untouched. The coverage list is down to the 20 commands below,
+none of them ours. What follows is the task as the Mac recorded it.
 
 `every_command_has_input_and_output_schemas` (in `crates/engine/src/schema/coverage_tests.rs`)
 **passes**: a missing schema is only a warning today, and becomes an error under
@@ -347,7 +397,11 @@ Neither blocks Phase 1: nothing opens a drawing yet.
    used a flat `WELL_KNOWN` list, which no longer exists on `main`, so this is the closest
    equivalent. A `Owner::Drawing` variant would be the real fix.
 
-### 6.8 Close out Phase 1
+### 6.8 Close out Phase 1 — done on 2026-10-27
+
+Every step below was done on the laptop (§2 and the session 4 log). Kept as the recipe for
+re-checking a rebuilt base.
+
 1. `cargo build -p solidcraft`. A debug build takes about 15 minutes from clean on the laptop.
 2. Targeted tests on geom, doc and io, plus the engine filters you touched.
 3. Launch with `plan\run-dev.cmd`, or the Bash lines in Appendix A.
@@ -358,6 +412,37 @@ Neither blocks Phase 1: nothing opens a drawing yet.
 **If a test link fails with `LNK1201`** (Windows, writing the program database): delete that test binary's stale `.pdb` in `target/debug/deps` and rerun. It's not a full disk.
 
 Then start **Phase 2** ([§8.2](#82-phases-26-full-task-lists)).
+
+### 6.9 Merge upstream `main`, measured 2026-10-27
+
+The owner chose to finish Phase 1 first, then merge `main`. Measured with `git merge-tree` from
+4f18ddea against `upstream/main` **9fb41f83**: **144 commits** since the branch's base (23734142),
+**5 conflicting files, every one both sides adding code in the same place**:
+
+| File | Ours (the drawings work) | `main` | Resolution |
+|---|---|---|---|
+| `crates/doc/src/document.rs` | `differs_only_in_drawings`, `drawing`, `put_drawing` | `differs_only_in_appearance` | keep both |
+| `crates/doc/src/lib.rs` | re-exports `BomType` | re-exports `WorldNames` | keep both |
+| `crates/engine/src/cmd/edit.rs` | `.any_part()` on undo, redo and checkpoint; `latest`, `nothing` and the per-part `go_to` docs | the new `edit.repeat` command and its contract | keep both |
+| `crates/engine/src/lib.rs` | "drawings changed: don't evaluate" | "appearances changed: don't evaluate" | keep both conditions, and say both in the comment |
+| `crates/engine/src/schema/mod.rs` | `pub mod drawing; pub mod drawing_view;` | `pub mod edit;` | all three, sorted |
+
+**Checked in the dry run's tree:**
+- **Nothing we did is lost.** `check_design_numbers` is still called (3 times) and `take_drawings`
+  still runs first. `main`'s `checked!` macro is unchanged, so the call sites fixed here still fit.
+- **No duplicated work.** None of #6482, #6788, #7316, #3891 or #5867 has landed on `main`, and
+  nobody upstream has written the `drawing.*` schemas.
+- **#7325: new designs save as `.sc`.** `.solidcraft` files still open and keep their name on Save,
+  so the test parts and the one drawing test that names `plate.solidcraft` are unaffected.
+- **From the follow-up list:** `main` has fixed the stray `>>>>>>>` marker in `AGENTS.md`. The two
+  Windows-only clippy warnings are still there, so that small upstream PR is still open to take.
+- **Gap 1 in §6.7 grows.** `main` added 14 command ids since the base, none with `.any_part()`. For
+  the sketch and solid commands that's right while a drawing is open; `edit.repeat`,
+  `view.render_stage` and `view.shots_strip` are app-wide and will be refused too.
+
+**After merging:** `cargo check --all-targets` on doc, io and engine; the doc `drawing` and
+`format` tests; engine `--lib` `drawing`, `schema::` and `edit`; then `cargo build -p solidcraft`
+and a short launch.
 
 ---
 
@@ -555,7 +640,75 @@ because the design is decoded before the cap is applied.
 2595 passed / 3 failed (the three above); doc 467, io 190, joints 161, all 0 failed; fmt, lists,
 skills, format-pending and licences pass.
 
----
+### Session 4: laptop (machine A), 2026-10-27 evening (UTC−4)
+
+**The owner's ask:** "pull the latest updates from the fork and get to work on resolving phase 1",
+then "get yourself up to speed with the progress updates first".
+
+**About 20:30: caught up.**
+- `git pull --ff-only` brought the Mac's sessions 2 and 3, 88f65b4d → a5be5764. Read this file,
+  `BETA-BASE.md` and every commit message.
+- Re-fetched the PR heads: #5867 still cce39b40, so §6 still applied; **#6788 had a new head**,
+  9e6b1bb2; `upstream/drawings` still ebafe074.
+
+**About 20:35: #5867.**
+- `git merge-tree` showed 4 conflicting files, down from the 12 the Mac measured before #3891 was
+  in. All 4 were additive (§6.5). Fixed the one 3-argument `checked!` call site.
+- `cargo check --all-targets` on geom, doc, render and engine: clean apart from the known Windows
+  warnings, 2 m 13 s.
+- geom `drawing` 38, doc `drawing` 19 and render `visual_style` 1 passed.
+
+**About 20:37 to 21:30: a mistake that cost 40 minutes.**
+- The engine run's filters included `robustness_goldens`, which matches all 104 seed tests, and the
+  output filter hid which test was running. The build took 13 minutes; the seeds then ran for 40.
+- The owner asked why it was taking so long. The test process was stopped and nothing was left
+  running. §5 now warns about it.
+- Re-ran from the built test binary with exact filters: engine `drawing` + `schema::` 70 passed in
+  0.3 s. **The three macOS failures pass on Windows** (prism 4 s, seed 36 23 s, seed 71 7 s).
+  `hostile_params_never_panic` passed in 577 s, pinned to 4 cores.
+- **21:41:** committed the merge as **09c3052f**.
+
+**21:41 to 21:49: the contracts and #6788.**
+- Wrote `schema/drawing.rs` and its tests, and switched `cmd/drawing.rs` to `checked!`, `.contract`
+  and `.output`, with replies built from the reply types (§6.6). The first build failed: the
+  existing drawing tests had their `json!` from `use super::*`, which the change removed. Fixed with
+  their own import.
+- engine `drawing` + `schema::` 74 passed. The coverage list went from 30 to 20. fmt and lists pass.
+  Committed as **3232bbb0**.
+- Read #6788's new head: both review findings addressed (§8.5). It merged cleanly as **4f18ddea**,
+  and doc `tolerance` + `display_units` 35 passed.
+
+**About 21:55: clippy.** On geom, doc, render, io, engine and ui-egui with all targets, 3 minutes:
+only the two Windows-only warnings `main` already has.
+
+**About 22:00: the owner asked how far behind `main` the fork is.**
+- The fork's `main` was 157 commits behind; `beta/drawings` was 144 behind `upstream/main`
+  9fb41f83.
+- A dry-run merge found 5 additive conflicts, nothing lost and nothing duplicated (§6.9).
+- **Decision (owner):** "Finish Phase 1 first", then merge `main`.
+
+**About 22:00 to 22:30: the rest of Phase 1.**
+- `cargo xtask wasm`: 12 crates in 1 minute, with no warnings `main` didn't already have.
+- CLI `run_results`: 18 passed, 17 m 31 s, nearly all of it building the CLI.
+- `cargo build -p solidcraft`: 10 m 30 s.
+- **22:27 launch check:**
+  - The dev build ran with the dev data folder on port 27900, with a copy of `plate-two-bores`
+    (`designs\phase1-check.solidcraft`).
+  - Over the control channel: `drawing.list` (none); `drawing.view.snapshot` front (fitted at 2:1,
+    boundary 200 × 40 mm on A3) and top at 1:1 (100 × 80 mm); `drawing.create` (one A3 landscape
+    sheet, units mm); `drawing.properties.set` part_number; `drawing.inspect`; `drawing.close`;
+    `drawing.list` (one, closed); and `engine.describe drawing.create`, which serves the new schemas.
+  - Screenshot: `%USERPROFILE%\SolidCraft-dev\screens\phase1-launch.png`.
+  - Then `app.quit {force: true}`; the app exited 0. The copy was not saved.
+
+**Side request (owner):** add an **Arrange** feature to the to-do list, after drawings. It is now
+Phase 7, with its plan in §8.8. Found while writing it:
+- RFC #3820 already proposes the 2D nesting;
+- the ribbon already has an "Arrange" group.
+
+**State left:** Phase 1 done. `beta/drawings` is the notes commit on top of 4f18ddea, tree clean,
+nothing running. **Not pushed**: 09c3052f, 3232bbb0, 4f18ddea and the notes are on the laptop only.
+Next is the `main` merge (§6.9).
 
 ---
 
@@ -744,6 +897,8 @@ say "approximate (mesh)".
 - [ ] Put a **Beta** label on the workspace card.
 
 **After the beta:**
+- **Arrange** (Phase 7): cut pieces nested on stock sheets for CNC, or footprints on a printer's
+  build plate ([§8.8](#88-arrange-planned-after-drawings));
 - exact hidden lines (#2457 + #3013 + the W02 kernel adapter);
 - true arcs recovered from mesh chains;
 - assemblies, parts lists and balloons (#7305 → #7312);
@@ -837,6 +992,14 @@ This changes daily. Re-check claims before acting.
 
 Posted 2026-10-27, all as COMMENT reviews, after the owner approved each one. Watch for replies.
 
+**Replies so far:**
+- **#6788:** armin0411 pushed 9e6b1bb2 at 19:32 UTC−3 and asked the owner on 2026-10-27 at
+  23:46 UTC to take another look. The laptop read the diff: limits are now their own
+  `ToleranceText::Limits` (the plain text drops the nominal), and `RoundingOutsideTolerance` fires
+  only when rounding moved the nominal, allowing for unit-conversion round-off. Both findings look
+  addressed, and the diff adds no unwrap or panic. **Nothing has been posted in reply;** a re-review
+  is the owner's call.
+
 | PR | What it is | Finding | Review link |
 |---|---|---|---|
 | #2457 | W06a, exact orthographic hidden lines | The plane face's bounding box isn't padded, so slab culling can drop hits on a 1-ulp mismatch. Also, `Trim::margin` is computed per hit. | [5661292983](https://github.com/tangency-labs/solidcraft/pull/2457#pullrequestreview-5661292983) |
@@ -856,8 +1019,8 @@ Posted 2026-10-27, all as COMMENT reviews, after the owner approved each one. Wa
 | `LNK1201` when linking a test (Windows). | Delete the stale `.pdb` in `target/debug/deps` and rerun. |
 | An auto-merge silently drops `main` code. | Review the auto-merged hunks in each conflicted file, not only the conflict markers. |
 | The web offline test is skipped. | Chrome isn't installed on the laptop. |
-| **3 engine tests fail on macOS** (machine B) at b0f2a86e: `prism_local_tests::a_ring_cut_round_a_counterbored_hole_in_a_chamfered_disc`, and `robustness_goldens` seeds **36** and **71**. | **Platform divergence in the kernel, not the merges.** Seed 36 is proven: macOS produces the **Windows** golden to six decimals (area 9964.083286 against 9964.083285, faces 21, edges 45, the same lumps error), and `tests/robustness/goldens.json` carries `platforms` overrides for **windows only**, so macOS falls back to the Linux-recorded shared value. Seed 71 differs in area by 0.0002% with faces 20→19 and edges 52→50, a tolerance-driven topology flip; prism is 0.108% off a 0.1% tolerance. Neither test file was touched by any merge, `crates/kernel` and `crates/sketch` are byte-identical to the base, and #3891 changes no geom, kernel or sketch code. The one geometry change in the base is #4817's rewrite of `Seg2::polyline` through a new `chords()`, which is output-identical: the arc step's old `.max(1e-6)` could never bind, because `tol >= radius * 1e-6` forces the step above 2.8e-3, and the other branches apply the same `max(1e-9)` once instead of per branch. **Confirm on the laptop by running these three at HEAD on Windows.** Recording macOS goldens is upstream's call, so none were blessed. |
-| **Owed on a machine with the headroom** (the laptop). | `cargo xtask wasm` (io gained `png` and `tiny-skia` from #7430); the CLI test `apps/solidcraft-cli/tests/run_results.rs`, which #3891 changed and which is a separate link; `clippy -D warnings` on engine and ui-egui (geom and doc pass); and the three tests above. |
+| **3 engine tests fail on macOS** (machine B) at b0f2a86e: `prism_local_tests::a_ring_cut_round_a_counterbored_hole_in_a_chamfered_disc`, and `robustness_goldens` seeds **36** and **71**. | **Platform divergence in the kernel, not the merges.** Seed 36 is proven: macOS produces the **Windows** golden to six decimals (area 9964.083286 against 9964.083285, faces 21, edges 45, the same lumps error), and `tests/robustness/goldens.json` carries `platforms` overrides for **windows only**, so macOS falls back to the Linux-recorded shared value. Seed 71 differs in area by 0.0002% with faces 20→19 and edges 52→50, a tolerance-driven topology flip; prism is 0.108% off a 0.1% tolerance. Neither test file was touched by any merge, `crates/kernel` and `crates/sketch` are byte-identical to the base, and #3891 changes no geom, kernel or sketch code. The one geometry change in the base is #4817's rewrite of `Seg2::polyline` through a new `chords()`, which is output-identical: the arc step's old `.max(1e-6)` could never bind, because `tol >= radius * 1e-6` forces the step above 2.8e-3, and the other branches apply the same `max(1e-9)` once instead of per branch. **Confirmed on the laptop, 2026-10-27, at 09c3052f: all three pass on Windows** (prism 4 s, seed 36 23 s, seed 71 7 s), so they are macOS-only. Recording macOS goldens is upstream's call, so none were blessed. |
+| **Owed on a machine with the headroom** (the laptop): **all done 2026-10-27.** | `cargo xtask wasm`: 12 crates build, no new warnings. CLI `run_results`: 18 passed. Clippy on geom, doc, render, io, engine and ui-egui with all targets: only the two Windows-only warnings `main` has. The three tests above pass. |
 | The dev window title says "v0.24.0". | Expected: the version number isn't bumped on `main`. Tell the windows apart by the port (27900) and the data folder. |
 
 ### 8.7 SHAs
@@ -886,12 +1049,16 @@ at 04:18-04:20 UTC, and the rest were restacked on top of the result. The old #5
 | #3891 | 72dfdb53 | **36cf48a3** | open; now the base of #5867 |
 | #4817 | 77e58dfa | 9bac2e44 | **MERGED into `drawings`** as de7bf4fc |
 | #5349 | e999ee5a | e999ee5a | unchanged; UI scaffold |
-| #5867 | 5bb34f49 (**gone**) | **cce39b40** | open, stacked on #3891 |
+| #5867 | 5bb34f49 (**gone**) | **cce39b40** | open, stacked on #3891; **merged here** as 09c3052f |
 | #6482 | 2c084c49 | 2c084c49 | unchanged; base `main` |
-| #6788 | c70ec84e | c70ec84e | unchanged |
+| #6788 | c70ec84e | **9e6b1bb2** (pushed 2026-10-27 evening, after our review) | open, base `main`; **merged here** as 4f18ddea |
 | #7255 | 8f500113 | d2fcae51 | open, inside #7430 |
 | #7316 | 55389724 (merged here) | 1403e678 | open; restacked on new `drawings` |
 | #7430 | 4063a536 | 1aaff713 | open, restacked |
+
+**Re-checked 2026-10-27 evening (laptop):** `upstream/drawings` is still **ebafe074**;
+`upstream/main` is **9fb41f83**, 144 commits past this branch's base; the fork's `origin/main` is
+157 behind it.
 
 **Branches now:** `upstream/drawings` is **ebafe074** (3 commits past the f18616e1 we merged).
 `upstream/main` is **53cba0cf**, 49 commits past the 23734142 this branch is based on.
@@ -907,6 +1074,75 @@ upstream/drawings ebafe074        <- #4817, #3877, #2457 all merged in
 ```
 
 The laptop also has a local branch `pr-6163` (5d658c30, the parked ledger draft), kept for reading only.
+
+### 8.8 Arrange: planned after drawings
+
+**The owner's request (2026-10-27):** "an arrange feature that lays out all cut pieces for a cnc
+machine into a 2d plane or a 3d footprint for cutting or printing", working much like the arrange
+tools in other CAD programs, as **the step after drawings**. Nothing here starts before the drawings
+beta is done.
+
+**What it does:**
+- **2D, for cutting.** Choose the pieces (bodies, or each sheet-metal part's flat pattern). Each is
+  laid flat on its cutting face and packed onto one or more stock sheets of a given size.
+  - Settings: spacing between pieces (the cutter's kerf or tool diameter), a margin at the sheet's
+    edges, how pieces may turn (not at all, by 90°, or freely), grain direction kept, and how many
+    of each piece.
+  - Results: the sheets used, the yield (area used ÷ area bought), and a DXF or SVG per sheet for
+    the CAM program, through the drawings' paper writers (Phase 4).
+- **3D, for printing.** Choose the bodies, set each on a face (or keep its orientation), and pack
+  their footprints onto the printer's build plate, onto more plates when they don't fit. The result
+  is exported as 3MF with plates, for the slicers that Send to Slicer already hands designs to.
+- **Like everything else:** each step is a command with input and output schemas (an `arrange.*`
+  family; no command uses that prefix today), it works from the CLI and over MCP, and it is saved in
+  the design the way drawings now are. It should update when the pieces change, as drawing views do.
+
+**Related upstream work** (read before designing; claim through the owner's issue, not a
+competing PR, D5):
+- **[#3820](https://github.com/tangency-labs/solidcraft/issues/3820) [RFC] Cut lists from the
+  model: stock sizes, nesting onto boards and sheets, and build plans** (emlama, open, unassigned,
+  needs-triage). Its "nesting onto boards and sheets" **is** the 2D half of this feature, so the 2D
+  arrange should build on it, or be offered to it. Its first slice is draft PR
+  [#3995](https://github.com/tangency-labs/solidcraft/pull/3995), "Stock size: a body's true length
+  × width × thickness, along the part (#137)".
+- **[#1626](https://github.com/tangency-labs/solidcraft/issues/1626) Research Request for Plugin:
+  3D Printing** (CamWight, research only, no code wanted). Its scope includes "orientation and plate
+  layout": the 3D half.
+- **Manufacturing / CAM** is milestone 9 in ROADMAP.md, with proposals
+  [#1153](https://github.com/tangency-labs/solidcraft/issues/1153) (2.5D milling, toolpaths and
+  G-code) and [#1621](https://github.com/tangency-labs/solidcraft/issues/1621) (CAM research).
+  Arrange is the step before toolpaths, not CAM itself.
+- **Already in SolidCraft:**
+  - the sheet-metal flat pattern and its DXF;
+  - section curves (`geom/section.rs`) for a planar piece's outline;
+  - 3MF export (`io/src/threemf.rs`) and Send to Slicer (`file.send_to_slicer`);
+  - after the beta, the paper scene and its SVG, DXF and PDF writers.
+
+**How it might be built** (a sketch, to be designed properly when it starts):
+1. Stock sizes and piece outlines first: #3995's true part size, then each piece's flat outline
+   with its holes.
+2. Packing by bounding rectangles (simple, fast and predictable) as the first version, then true
+   shape nesting, which fits pieces into each other's gaps, as the second.
+3. The 3D plate layout, reusing the same packing on footprints.
+
+**Clean-room rules for this feature:**
+- Design it from this description, in our own words. Never copy another program's arrange UI, its
+  text, its icons or its layouts, and never run commercial CAD to produce reference layouts or
+  numbers.
+- Some well-known nesting code is GPL or LGPL, including what the copyleft slicers use. Check a
+  library's licence before reading anything of it, and add only MIT or Apache licensed crates
+  (`cargo xtask licences --check`).
+
+**The name "Arrange" is taken in the UI.** The Model tab's ribbon already has a group called
+**Arrange** (Move / Copy, Mirror, Pattern), as the laptop's screenshot of 2026-10-27 shows. The new
+feature needs a name and place that don't clash with it, such as its own group or workspace for
+making parts. Decide this with the owner; its command ids must not reuse an existing prefix either.
+
+**Open questions for the owner, before starting:**
+- 2D first, 3D first, or both together?
+- Is an arrangement saved in the design and kept up to date as pieces change, or is it a one-off
+  export?
+- Offer to work with #3820's author, or keep it in the beta first (D5)?
 
 ---
 

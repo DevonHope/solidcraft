@@ -13,9 +13,11 @@ the head that was merged. Status and the task list are in [PROGRESS.md](PROGRESS
 | 5 | bca3611a | PR #6482, `mesh_lines`: the hidden-line module both view commands share | 2c084c49a9eceaf72e7639275aeaac79351d24be |
 | 6 | fe8dd804 | PR #7430, dashed lines and PNG, which contains #7255 | 1aaff713aae1e3645752f9de313634cc4090f69e |
 | 7 | 69261367 | PR #3891, the drawing session, ten commands and in-design storage | 36cf48a3f64c530a128f5d794f37b7cfa24cc3ab |
+| 8 | 09c3052f | PR #5867, `drawing.view.snapshot` (W07 V2), with projected views, measurement on view frames and model extents on a plane | cce39b40d1cb177baad320ddede0e153452fce90 |
+| 9 | 4f18ddea | PR #6788, tolerance and dimension text (W09c), the head that answers our review | 9e6b1bb2b5f3f21a6b730a07d8dc7d6d446fe1ed |
 
-Not merged yet: **#5867** (cce39b40, `drawing.view.snapshot` on top of #3891) and **#6788**
-(c70ec84e, tolerance text, optional).
+That completes the Phase 1 stack (2026-10-27). Next: `upstream/main` (9fb41f83 when measured,
+144 commits past the base), as PROGRESS.md §6.9 describes.
 
 **Rebuilding this base from scratch** is possible from the heads above, but the resolutions are
 the work: see PROGRESS.md §6.1 for the drawings merge and the #3891 merge commit's own message,
@@ -29,3 +31,5 @@ Two commits on this branch are ours, not a merge:
 - **b0f2a86e**: a regression test that the `user_materials` cap runs before a design is decoded.
   Both the session-1 auto-merge and the 2026-10-27 drawings merge nearly dropped the check it
   guards.
+- **3232bbb0**: input and output schemas for #3891's ten `drawing.*` commands
+  (`engine/src/schema/drawing.rs`), which #3891 lacks. If upstream adds its own, take theirs.
