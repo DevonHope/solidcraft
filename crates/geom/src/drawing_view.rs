@@ -184,6 +184,116 @@ pub struct Scale {
     model: f64,
 }
 
+/// The largest space a standard layout leaves between neighbouring views, in paper millimetres.
+pub const MAX_VIEW_GAP_MM: f64 = 1000.0;
+
+/// The model's box on each of a standard layout's four planes, in that plane's own coordinates
+/// ([`Plane::to_local`]), in model millimetres. The caller measures them; aligned views share an
+/// axis, so front and top come out as wide and front and right as tall, but each is taken on its
+/// own and the layout uses the larger of a shared pair.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StandardExtents {
+    pub front: Aabb2,
+    pub top: Aabb2,
+    pub right: Aabb2,
+    pub iso: Aabb2,
+}
+
+/// A standard arrangement: the front view, the top and right views projected from it and lined up
+/// with it, and an isometric view in the cell they leave free, all at one scale on one sheet.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StandardLayout {
+    pub scale: Scale,
+    pub front: ViewFrame,
+    pub top: ViewFrame,
+    pub right: ViewFrame,
+    pub iso: ViewFrame,
+}
+
+/// Lay the front, top, right and isometric views out on `border` (the sheet's drawing border, in
+/// paper millimetres) at the largest preset scale that fits, leaving `gap_mm` between neighbours.
+///
+/// The views occupy a 2x2 grid. Which cell each takes follows the projection (ISO 5456-2): in
+/// third angle the top view sits above the front and the right view to its right, and in first
+/// angle the top sits below and the right view to the left, since a first-angle view sits on the
+/// side away from the one it looks from. The content is the same either way — front, top, right —
+/// and the isometric view takes whichever cell is left.
+///
+/// `clear` is a box no view may touch, normally the title block. The grid is fitted into the
+/// largest band of the border beside it, so no view can land on it whichever corner it is in.
+/// With no such box the whole border is used.
+pub fn standard_layout(
+    extents: &StandardExtents,
+    border: Aabb2,
+    clear: Option<Aabb2>,
+    projection: Projection,
+    gap_mm: f64,
+) -> Result<StandardLayout> {
+    let sound = |b: &Aabb2| !b.is_empty() && b.min.is_finite() && b.max.is_finite();
+    require([extents.front, extents.top, extents.right, extents.iso].iter().all(sound), "a standard layout's extents are finite and not inside out")?;
+    require(gap_mm.is_finite() && (0.0..=MAX_VIEW_GAP_MM).contains(&gap_mm), "a standard layout's gap is 0 to 1000 mm")?;
+    require(sound(&border), "a standard layout's drawing border is finite and not inside out")?;
+    if let Some(block) = clear {
+        require(sound(&block), "the space a standard layout keeps clear is finite and not inside out")?;
+        require(border.intersection(&block) == block, "the space a standard layout keeps clear lies inside the drawing border")?;
+    }
+
+    // One column holds front and top, the other right and iso; one row holds front and right, the
+    // other top and iso. A shared pair should measure the same, so take the larger and let a
+    // rounding difference widen the cell rather than overlap a neighbour.
+    let (f, t, r, i) = (extents.front.size(), extents.top.size(), extents.right.size(), extents.iso.size());
+    let (front_col, other_col) = (f.x.max(t.x), r.x.max(i.x));
+    let (front_row, other_row) = (f.y.max(r.y), t.y.max(i.y));
+    let grid = Vec2::new(front_col + other_col, front_row + other_row);
+
+    // The bands beside the box to keep clear: left of it, right of it, below it and above it. The
+    // grid goes in whichever takes the largest scale, so the block's corner never matters.
+    let corner = |a: Vec2, b: Vec2| [a, b].into_iter().collect::<Aabb2>();
+    let bands: Vec<Aabb2> = match clear {
+        None => vec![border],
+        Some(b) => [
+            corner(border.min, Vec2::new(b.min.x, border.max.y)),
+            corner(Vec2::new(b.max.x, border.min.y), border.max),
+            corner(border.min, Vec2::new(border.max.x, b.min.y)),
+            corner(Vec2::new(border.min.x, b.max.y), border.max),
+        ]
+        .into_iter()
+        .filter(|band| !band.is_empty())
+        .collect(),
+    };
+    let gaps = Vec2::new(gap_mm, gap_mm);
+    let (room, scale) = bands
+        .iter()
+        .filter_map(|band| Scale::fit(grid, band.size() - gaps).map(|s| (*band, s)))
+        .max_by(|(_, a), (_, b)| a.factor().total_cmp(&b.factor()))
+        .ok_or(Invalid("no preset scale fits these four views on this sheet: use a larger sheet or fewer views"))?;
+
+    // Cell centres on paper. The grid is centred in the band it was fitted into.
+    let factor = scale.factor();
+    let (cw, ch) = (Vec2::new(front_col, other_col) * factor, Vec2::new(front_row, other_row) * factor);
+    let size = Vec2::new(cw.x + gap_mm + cw.y, ch.x + gap_mm + ch.y);
+    let origin = room.center() - size * 0.5;
+    // Columns left to right and rows bottom to top, with the front view's cell first in each pair.
+    let third = projection == Projection::Third;
+    let (left_w, bottom_h) = (if third { cw.x } else { cw.y }, if third { ch.x } else { ch.y });
+    let x_of = |front_cell: bool| {
+        let left = front_cell == third;
+        if left { origin.x + left_w * 0.5 } else { origin.x + left_w + gap_mm + (size.x - left_w - gap_mm) * 0.5 }
+    };
+    let y_of = |front_cell: bool| {
+        let bottom = front_cell == third;
+        if bottom { origin.y + bottom_h * 0.5 } else { origin.y + bottom_h + gap_mm + (size.y - bottom_h - gap_mm) * 0.5 }
+    };
+
+    let (front_at, iso_at) = (Vec2::new(x_of(true), y_of(true)), Vec2::new(x_of(false), y_of(false)));
+    let front = ViewFrame::new(NamedView::Front.basis(), scale, extents.front.center(), front_at)?;
+    let (top_side, right_side) = if third { (ProjectedSide::Above, ProjectedSide::Right) } else { (ProjectedSide::Below, ProjectedSide::Left) };
+    let top = front.aligned(top_side, projection, extents.top.center(), Vec2::new(front_at.x, y_of(false)))?;
+    let right = front.aligned(right_side, projection, extents.right.center(), Vec2::new(x_of(false), front_at.y))?;
+    let iso = ViewFrame::new(NamedView::IsoFrontRight.basis(), scale, extents.iso.center(), iso_at)?;
+    Ok(StandardLayout { scale, front, top, right, iso })
+}
+
 /// ISO 5455's recommended scales, largest first: enlargements, full size, then reductions.
 pub const PRESETS: [Scale; 18] = [
     Scale { paper: 50.0, model: 1.0 },

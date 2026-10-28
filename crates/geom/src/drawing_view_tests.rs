@@ -383,3 +383,83 @@ fn a_frame_refuses_hostile_input() {
     }
     assert!(ViewFrame::new(front, one, Vec2::ZERO, Vec2::new(5000.0, -5000.0)).is_ok());
 }
+
+/// A part whose four views nearly fill an A3 sheet at 1:1, so a layout that ignored the title
+/// block would run into it. The sides differ per view, so a swapped view shows up as a wrong shape.
+/// The grid is 350 x 250 mm against A3's roughly 400 x 277 mm drawing border.
+fn block_extents() -> StandardExtents {
+    let box_of = |w: f64, h: f64| [Vec2::ZERO, Vec2::new(w, h)].into_iter().collect::<Aabb2>();
+    StandardExtents { front: box_of(200.0, 120.0), top: box_of(200.0, 130.0), right: box_of(150.0, 120.0), iso: box_of(150.0, 130.0) }
+}
+
+/// The drawing border and a title block's box on a standard sheet.
+fn sheet_and_block(size: crate::drawing_sheet::PaperSize, orientation: crate::drawing_sheet::Orientation) -> (Aabb2, Aabb2) {
+    let layout = crate::drawing_sheet::DrawingBorderProfile::iso().layout(&crate::drawing_sheet::Sheet::standard(size, orientation)).unwrap();
+    let border = layout.drawing_border;
+    // A 180 x 45 mm block in the bottom-right corner, as ISO 7200 puts it.
+    let block = [Vec2::new(border.max.x - 180.0, border.min.y), Vec2::new(border.max.x, border.min.y + 45.0)].into_iter().collect::<Aabb2>();
+    (border, block)
+}
+
+#[test]
+fn a_standard_layout_keeps_every_view_inside_the_border_and_off_the_title_block() {
+    use crate::drawing_sheet::{Orientation, PaperSize};
+    for (size, orientation) in [(PaperSize::A3, Orientation::Landscape), (PaperSize::A4, Orientation::Portrait)] {
+        for projection in [Projection::First, Projection::Third] {
+            let (border, block) = sheet_and_block(size, orientation);
+            let e = block_extents();
+            let l = standard_layout(&e, border, Some(block), projection, 10.0).expect("a 100 mm block lays out on A4");
+            let boxes = [(l.front, e.front), (l.top, e.top), (l.right, e.right), (l.iso, e.iso)];
+            for (name, (frame, model)) in ["front", "top", "right", "iso"].into_iter().zip(boxes) {
+                let b = frame.boundary(&model).expect("a laid-out view has a box on paper");
+                let inside = border.intersection(&b) == b;
+                assert!(inside, "{size:?} {orientation:?} {projection:?}: the {name} view leaves the drawing border: {b:?} not in {border:?}");
+                let overlap = block.intersection(&b);
+                assert!(overlap.is_empty(), "{size:?} {orientation:?} {projection:?}: the {name} view lands on the title block: {overlap:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_standard_layouts_views_are_the_named_ones_and_stay_lined_up() {
+    let e = block_extents();
+    let (border, block) = sheet_and_block(crate::drawing_sheet::PaperSize::A3, crate::drawing_sheet::Orientation::Landscape);
+    for projection in [Projection::First, Projection::Third] {
+        let l = standard_layout(&e, border, Some(block), projection, 10.0).unwrap();
+        // The content is front, top and right whichever angle it is drawn in: only the cells move.
+        assert_eq!(l.front.basis(), NamedView::Front.basis(), "{projection:?}");
+        for (name, got, want) in [("top", l.top.basis(), NamedView::Top.basis()), ("right", l.right.basis(), NamedView::Right.basis())] {
+            assert!(close(got.x, want.x) && close(got.y, want.y), "{projection:?}: the {name} view is not the named one: {got:?} not {want:?}");
+        }
+        // Each model point sits as high in the front and right views, and as far across in the
+        // front and top views. That is what "lined up" means, and it is the reason for `aligned`.
+        for p in cube() {
+            let (f, t, r) = (l.front.to_paper(p), l.top.to_paper(p), l.right.to_paper(p));
+            assert!((f.y - r.y).abs() < 1e-9, "{projection:?}: front y {} and right y {} differ for {p:?}", f.y, r.y);
+            assert!((f.x - t.x).abs() < 1e-9, "{projection:?}: front x {} and top x {} differ for {p:?}", f.x, t.x);
+        }
+    }
+}
+
+#[test]
+fn a_standard_layout_refuses_what_it_cannot_lay_out() {
+    let e = block_extents();
+    let (border, block) = sheet_and_block(crate::drawing_sheet::PaperSize::A3, crate::drawing_sheet::Orientation::Landscape);
+    let refused = |extents: &StandardExtents, border: Aabb2, clear: Option<Aabb2>, gap: f64| {
+        standard_layout(extents, border, clear, Projection::Third, gap).map(|_| ()).unwrap_err().to_string()
+    };
+    assert!(refused(&e, border, Some(block), f64::NAN).contains("gap is 0 to 1000 mm"));
+    assert!(refused(&e, border, Some(block), -1.0).contains("gap is 0 to 1000 mm"));
+    assert!(refused(&e, Aabb2::EMPTY, None, 10.0).contains("drawing border is finite and not inside out"));
+    let outside = [Vec2::new(border.max.x, border.min.y), Vec2::new(border.max.x + 50.0, border.min.y + 45.0)].into_iter().collect::<Aabb2>();
+    assert!(refused(&e, border, Some(outside), 10.0).contains("lies inside the drawing border"));
+    let mut inside_out = e;
+    inside_out.front = Aabb2::EMPTY;
+    assert!(refused(&inside_out, border, None, 10.0).contains("extents are finite and not inside out"));
+    // A metre-wide part has no preset scale that fits it four times over on A4.
+    let huge = |w: f64, h: f64| [Vec2::ZERO, Vec2::new(w, h)].into_iter().collect::<Aabb2>();
+    let big = StandardExtents { front: huge(1e9, 1e9), top: huge(1e9, 1e9), right: huge(1e9, 1e9), iso: huge(1e9, 1e9) };
+    let (small, block_small) = sheet_and_block(crate::drawing_sheet::PaperSize::A4, crate::drawing_sheet::Orientation::Portrait);
+    assert!(refused(&big, small, Some(block_small), 10.0).contains("no preset scale fits these four views"));
+}
