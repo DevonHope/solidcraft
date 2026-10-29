@@ -427,6 +427,15 @@ fn a_standard_layouts_views_are_the_named_ones_and_stay_lined_up() {
     let (border, block) = sheet_and_block(crate::drawing_sheet::PaperSize::A3, crate::drawing_sheet::Orientation::Landscape);
     for projection in [Projection::First, Projection::Third] {
         let l = standard_layout(&e, border, Some(block), projection, 10.0).unwrap();
+        // The sides are the projection's, and they are the layout's to say: a first-angle view sits
+        // on the side away from the one it looks from, so the top view goes below and the right
+        // view to the left.
+        let sides = (l.top_side, l.right_side);
+        let wanted = match projection {
+            Projection::Third => (ProjectedSide::Above, ProjectedSide::Right),
+            Projection::First => (ProjectedSide::Below, ProjectedSide::Left),
+        };
+        assert_eq!(sides, wanted, "{projection:?}");
         // The content is front, top and right whichever angle it is drawn in: only the cells move.
         assert_eq!(l.front.basis(), NamedView::Front.basis(), "{projection:?}");
         for (name, got, want) in [("top", l.top.basis(), NamedView::Top.basis()), ("right", l.right.basis(), NamedView::Right.basis())] {

@@ -252,10 +252,14 @@ fn id_of(view: &Value) -> String {
     view["id"].as_str().expect("the view's id").to_string()
 }
 
-/// The drawing area of an A3 landscape sheet with the ISO border, which `drawing.create` makes.
+/// The sheet `drawing.create` makes: A3 landscape.
+fn a3_sheet() -> Sheet {
+    Sheet::standard(solidcraft_geom::drawing_sheet::PaperSize::A3, solidcraft_geom::drawing_sheet::Orientation::Landscape)
+}
+
+/// The drawing area of that sheet with the ISO border.
 fn a3_border() -> solidcraft_geom::Aabb2 {
-    let sheet = Sheet::standard(solidcraft_geom::drawing_sheet::PaperSize::A3, solidcraft_geom::drawing_sheet::Orientation::Landscape);
-    DrawingBorderProfile::iso().layout(&sheet).expect("the ISO border on A3").drawing_border
+    DrawingBorderProfile::iso().layout(&a3_sheet()).expect("the ISO border on A3").drawing_border
 }
 
 /// A base view is saved in the middle of the sheet's drawing area unless the call says where, it
@@ -429,4 +433,85 @@ fn a_title_block_is_put_on_a_sheet_and_refused_where_it_cant_be_drawn() {
     s.doc_mut().put_drawing(Arc::new(small));
     let tight = why(&mut s, "drawing.title_block.set", json!({"block": "built_in"}));
     assert!(tight.contains("a title block fits inside the drawing border"), "{tight}");
+}
+
+/// The standard arrangement, end to end: four views on one sheet at one fitted scale, each inside
+/// the drawing border and clear of the title block, the two projections lined up with the front
+/// view and turned the way the drawing's projection asks.
+#[test]
+fn the_standard_views_land_inside_the_border_and_off_the_title_block() {
+    for (projection, sides) in [("first", ("below", "left")), ("third", ("above", "right"))] {
+        let mut s = drawn();
+        run(&mut s, "drawing.set", json!({"projection": projection}));
+        run(&mut s, "drawing.title_block.set", json!({"block": "built_in"}));
+        let steps = s.undo.len();
+        let reply = run(&mut s, "drawing.view.standard", json!({}));
+        let views = reply["views"].as_array().expect("the four views").clone();
+        assert_eq!(views.len(), 4, "front, top, right and the isometric");
+        // The front and isometric views carry the fitted scale; the projections follow them.
+        let scale = reply["scale"]["text"].as_str().expect("the scale").to_string();
+        assert!(reply["scale"]["fitted"].as_bool().unwrap_or_default(), "it was worked out, not given");
+        assert_eq!(views[0]["style"]["scale"], json!(scale));
+        assert_eq!(views[3]["style"]["scale"], json!(scale));
+        assert_eq!((views[1].get("style"), views[2].get("style")), (None, None), "a projection follows its base view");
+        // Which way each looks, and which side it sits on: the drawing's projection decides, and
+        // the layout is the one that says so (`StandardLayout::top_side`).
+        assert_eq!(views[0]["looks"]["base"]["view"]["named"], json!("front"));
+        assert_eq!(views[3]["looks"]["base"]["view"]["named"], json!("iso_front_right"));
+        let from = views[0]["id"].clone();
+        for (view, side) in [(&views[1], sides.0), (&views[2], sides.1)] {
+            let projected = view["looks"]["projected"].clone();
+            assert_eq!((projected["from"].clone(), projected["side"].clone()), (from.clone(), json!(side)), "{projection} angle");
+        }
+        // In first angle the view below the front looks from above, so it is the top view, and the
+        // one to the left looks from the right; in third angle each sits on the side it looks from.
+        let named = |view: &Value| view["looks"]["projected"]["view"]["named"].clone();
+        assert_eq!((named(&views[1]), named(&views[2])), (json!("top"), json!("right")), "{projection} angle shows top and right either way");
+        // Every view inside the drawing border, and none of them on the title block.
+        let border = a3_border();
+        let block = kept_clear(
+            &solidcraft_geom::title_block::TitleBlock::built_in().layout(&DrawingBorderProfile::iso().layout(&a3_sheet()).unwrap()).unwrap(),
+            border,
+        );
+        for view in &views {
+            let at = point(&view["position_mm"]);
+            assert!(border.contains(at), "{projection}: a view's centre is outside the drawing border at {at:?}");
+            assert!(!block.contains(at), "{projection}: a view's centre is on the title block at {at:?}");
+        }
+        // All four are one undo step of the drawing, and it takes all four away. This is the only
+        // command that is `in_drawing()` without being `doc_only()`, so the step is worth asserting.
+        let part = s.undo.last().and_then(|step| step.part);
+        assert_eq!((s.undo.len(), part), (steps + 1, Some(s.open_drawing.expect("a drawing open"))), "{projection}");
+        run(&mut s, "edit.undo", json!({}));
+        assert_eq!(run(&mut s, "drawing.inspect", json!({}))["sheets"][0]["views"], json!([]), "{projection}: undone");
+        run(&mut s, "edit.redo", json!({}));
+        let back = run(&mut s, "drawing.inspect", json!({}))["sheets"][0]["views"].as_array().map(Vec::len);
+        assert_eq!(back, Some(4), "{projection}: redone");
+    }
+}
+
+/// What the standard arrangement refuses: a sheet that already draws views, a design with nothing
+/// in it, a gap out of range, and a sheet with no drawing border to lay them out in.
+#[test]
+fn the_standard_views_are_refused_where_they_cannot_be_laid_out() {
+    let mut s = drawn();
+    run(&mut s, "drawing.view.standard", json!({}));
+    let again = why(&mut s, "drawing.view.standard", json!({}));
+    assert!(again.contains("already draws views") && again.contains("drawing.view.delete"), "{again}");
+    // A gap wider than the sheet: the layout refuses it by its own rule, naming the presets.
+    let mut fresh = drawn();
+    let wide = why(&mut fresh, "drawing.view.standard", json!({"gap_mm": 900.0}));
+    assert!(wide.contains("no preset scale fits"), "{wide}");
+    for gap in [-1.0, 1001.0] {
+        assert!(why(&mut fresh, "drawing.view.standard", json!({"gap_mm": gap})).contains("0 to 1000 mm"), "{gap}");
+    }
+    // No border on the sheet: nowhere to lay them out. The paper is set by hand, since no command
+    // changes a sheet's border yet.
+    let open = fresh.drawing("test").expect("a drawing open").clone();
+    let mut bare = (*open).clone();
+    let sheet = Arc::make_mut(&mut bare.sheets[0]);
+    sheet.border = None;
+    sheet.title_block = None;
+    fresh.doc_mut().put_drawing(Arc::new(bare));
+    assert!(why(&mut fresh, "drawing.view.standard", json!({})).contains("no drawing border"));
 }

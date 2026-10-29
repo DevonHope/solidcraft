@@ -66,6 +66,8 @@ fn strict_keeps_todays_errors_in_a_drawing() {
         ("drawing.view.set", json!({})),
         ("drawing.view.set", json!({"view": absent.clone(), "clear": ["colour"]})),
         ("drawing.view.delete", json!({"view": "nope"})),
+        ("drawing.view.standard", json!({"gap_mm": "wide"})),
+        ("drawing.view.standard", json!({"sheet": 5})),
         ("drawing.set", json!({"language": false})),
         ("drawing.set", json!({"units": {"fixed": "mm"}})),
         ("drawing.set", json!({"units": "parsec"})),

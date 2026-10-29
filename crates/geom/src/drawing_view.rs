@@ -208,6 +208,13 @@ pub struct StandardLayout {
     pub top: ViewFrame,
     pub right: ViewFrame,
     pub iso: ViewFrame,
+    /// The side of the front view the top view is projected onto: above it in third angle, below
+    /// it in first. Given here so that a caller saving these views records the side this layout
+    /// chose rather than working the projection's rule out again.
+    pub top_side: ProjectedSide,
+    /// The side of the front view the right view is projected onto: to its right in third angle,
+    /// to its left in first.
+    pub right_side: ProjectedSide,
 }
 
 /// Lay the front, top, right and isometric views out on `border` (the sheet's drawing border, in
@@ -291,7 +298,7 @@ pub fn standard_layout(
     let top = front.aligned(top_side, projection, extents.top.center(), Vec2::new(front_at.x, y_of(false)))?;
     let right = front.aligned(right_side, projection, extents.right.center(), Vec2::new(x_of(false), front_at.y))?;
     let iso = ViewFrame::new(NamedView::IsoFrontRight.basis(), scale, extents.iso.center(), iso_at)?;
-    Ok(StandardLayout { scale, front, top, right, iso })
+    Ok(StandardLayout { scale, front, top, right, iso, top_side, right_side })
 }
 
 /// ISO 5455's recommended scales, largest first: enlargements, full size, then reductions.

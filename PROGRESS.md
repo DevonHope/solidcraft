@@ -19,13 +19,13 @@ Times in the log are local time on the machine that did the work, with the UTC o
 | | |
 |---|---|
 | **Last updated** | 2026-10-29, morning, on the Mac (machine B, see [Machines](#machines)) |
-| **Branch** | `beta/drawings`: 2026-10-29's **Records** and **view commands** commits on top of **0e3074ac**. Their SHAs are deliberately not written here — naming one went stale twice; `git log --oneline -3` has them, and `git log --oneline origin/beta/drawings..HEAD` says which are not on the fork yet. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
+| **Branch** | `beta/drawings`, built on **0e3074ac** (2026-10-28's last commit). What is on it since, and which of those are on the fork, is `git log --oneline 0e3074ac..HEAD` and `git log --oneline origin/beta/drawings..HEAD` — this row named SHAs twice and counted commits once, and went stale all three times. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
 | **Pushed?** | The fork's branch is `origin/beta/drawings`, and **`git log --oneline origin/beta/drawings..HEAD` is the only honest answer** to what is still local — this row has gone stale twice by trying to say it in words. Every push so far went up with the owner's explicit OK. Another machine gets what is there with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
-| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Five of its nine items are done — exact view basis, view lines, standard layout, the paper scene builder, and the drawing session, which **needed no code** because #3891 is already in the branch. **Records** is done but for the `dimensions` and `notes` lists (moved to Phase 3), and the **view commands** but for `drawing.view.standard`, `drawing.sheet.set` and `drawing.sheet.paper` ([§8.2](#82-phases-26-full-task-lists)). Left whole: **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
+| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Five of its nine items are done — exact view basis, view lines, standard layout, the paper scene builder, and the drawing session, which **needed no code** because #3891 is already in the branch. **Records** is done but for the `dimensions` and `notes` lists (moved to Phase 3), and the **view commands** but for `drawing.sheet.set` and `drawing.sheet.paper` ([§8.2](#82-phases-26-full-task-lists)). Left whole: **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
 | **Running** | Nothing. |
 | **Last measured** | The chamfer case in [§8.6](#86-known-problems-and-fixes), 2026-10-28 on the Mac: the kernel's cost, and a test proving OK reuses the preview's evaluation. The report and its scripts are written and **not posted**. |
-| **Next action** | **`drawing.view.standard`**, the four-view layout: it composes `standard_layout` with the records the view commands now write, and it is the **first drawing command that reads the model** (it needs the extents on four planes), so it is not `doc_only()` and its test goes through `execute`. Then `drawing.sheet.set` and `drawing.sheet.paper`, Freshness and Update, and the SVG export ([§8.2](#82-phases-26-full-task-lists)). **The gate: settled** (2026-10-29) — doc, io and engine one crate at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 RAYON_NUM_THREADS=2` and `nice -n 19`, and no workspace-wide build while free disk is under 60 GB ([§5](#5-working-rules-agreed-with-the-owner)). |
+| **Next action** | **`drawing.sheet.paper`**, the read-only scene JSON: it is the last piece between the saved views and a picture, and it composes `geom::drawing_paper::scene` with each view's `ViewLines` (the sheet's layout, its block and one group per view). Then `drawing.sheet.set`, **Freshness and Update**, and the **SVG export** `drawing.export {format: "svg"}` — the paper SVG writer itself already exists (#7430), so the export is the wiring ([§8.2](#82-phases-26-full-task-lists)). **The gate: settled** (2026-10-29) — doc, io, geom and engine one crate at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 RAYON_NUM_THREADS=2` and `nice -n 19`, and no workspace-wide build while free disk is under 60 GB ([§5](#5-working-rules-agreed-with-the-owner)). |
 | **Blockers** | None. **One decision open for the owner:** the default projection is **first angle**, which is one line in `crates/doc/src/drawing.rs` if third angle is wanted ([§8.2](#82-phases-26-full-task-lists)). |
 
 ---
@@ -272,7 +272,10 @@ git switch beta/drawings
   `robustness_goldens::seed_36`. Test filters are substrings, so check what a filter matches with
   `<test binary> --list | grep -c <filter>` before running it.
 - **`hostile_params_never_panic` starts one thread per core** (16 on the laptop), whatever
-  `RUST_TEST_THREADS` says. It takes about 10 minutes. On Windows, run the test binary directly
+  `RUST_TEST_THREADS` says. It takes about 10 minutes **on the laptop**; measured on machine B on
+  2026-10-29, with the binary already built, it is **92 seconds**. So on the Mac it is a cheap
+  check, not one to defer — defer it only while something else (the owner's own render) wants the
+  cores. On Windows, run the test binary directly
   with its process pinned to 4 cores at below-normal priority (PowerShell: `Start-Process …
   -PassThru`, then `.ProcessorAffinity = 0xF` and `.PriorityClass = "BelowNormal"`).
 - **The test binary can be run directly** once built
@@ -816,13 +819,14 @@ again.
   their labels in eight locales, and the glossary terms the new ideas owed (base view, projected
   view, projection, title block — that page's own rule asks a change which adds an idea to add its
   term). The note in §8.2 records the id collision the plan had missed and the five decisions.
-  `drawing.view.standard` is left, and it will be the first drawing command that reads the model.
+  Then `drawing.view.standard` on top of them, once the owner's render had finished with the
+  machine: the four views at one fitted scale, and the first drawing command that reads the model.
 - **The owner's Fusion render had the machine** from about 10:30 (load 139, ten cores on one
   process), so the engine was gated at two jobs and `nice -n 19` beside it and no further heavy
   build was started. Memory stayed at 76% free throughout, so this was nothing like 2026-10-28.
 
-**State left:** Phase 2 is five of nine items done; Records is done but for the dimension and note
-lists, and the view commands but for `drawing.view.standard`, `drawing.sheet.set` and
+**State left:** Phase 2 is five of nine items done outright, with two more part-done: Records but
+for the dimension and note lists, and the view commands but for `drawing.sheet.set` and
 `drawing.sheet.paper`. The branch is 0e3074ac plus the Records and view-commands commits; what is
 pushed is whatever `git log --oneline origin/beta/drawings..HEAD` leaves empty. Nothing is running.
 Two decisions are open for the owner: the default projection (first angle now), and whether the
@@ -921,12 +925,13 @@ say "approximate (mesh)".
   - Add `ObjectKind::View`, `Dimension` and `Note`.
   - One group per view: visible strokes 0.5 mm, hidden strokes 0.25 mm dashed (#7430).
   - Mind the 100k-record cap per scene: simplify to paper tolerance.
-- [~] **View commands.** **The five that edit the record are done (2026-10-29, machine B);** the
-  note below records what they decide. `drawing.view.standard`, `drawing.sheet.set` and
-  `drawing.sheet.paper` are left.
+- [~] **View commands.** **Six of the eight are done (2026-10-29, machine B);** the notes below
+  record what they decide. `drawing.sheet.set` and `drawing.sheet.paper` are left.
   - [x] `drawing.view.base` and `drawing.view.projected` (the names #5349 reserves, checked against
     its branch);
-  - [ ] `drawing.view.standard`;
+  - [x] `drawing.view.standard`: the four views, at the one scale the layout fits, in the largest
+    band of the border beside the title block. **The first drawing command that reads the model**,
+    so it is not `doc_only()`;
   - [x] `drawing.view.set` (move, scale, style, and `clear` to give a field back);
   - [x] ~~`drawing.delete`~~ **`drawing.view.delete`**: `drawing.delete` already deletes a
     *drawing* (#3890), so the plan's id was taken. A base view takes the views projected from it
@@ -942,6 +947,71 @@ say "approximate (mesh)".
   - A changed source marks views out of date.
   - `drawing.update` recomputes on the file worker, like `Kind::ExportDxf`. Never on the window thread; wasm runs it serially.
 - [ ] **SVG export.** `drawing.export {format: "svg", path, sheet?}` through the existing paper SVG writer.
+
+**`drawing.view.standard` — the four views, done on machine B, 2026-10-29.**
+
+The command that the phase's done-when is written around: "a script creates a drawing from a plate,
+adds the standard views and exports it". It composes `standard_layout` (geom, 2026-10-28) with the
+records and the writers above, and it is the **first drawing command that reads the model** — the
+scale and the four places follow the part's extents on four planes, so there is nothing to lay out
+without measuring first. It is therefore not `doc_only()`, and the module's own note now
+separates the four commands that evaluate nothing from this one that does — a claim that had just
+become false where it stood.
+
+**The layout now says which sides it chose.** The sides a projected view sits on follow the
+drawing's projection, and `standard_layout` already worked them out internally (`let (top_side,
+right_side) = if third …`). Mirroring that `if` in the engine would have been a second place for
+the ISO 5456-2 rule to live and drift, so `StandardLayout` returns `top_side` and `right_side`, and
+the engine writes what the layout decided. The geom test asserts them against the projection, so
+the rule is pinned where it is implemented.
+
+**Where each view's centre goes is read back from the frame, not worked out again.** A projected
+`ViewFrame` derives the axis it shares with its parent (`ViewFrame::aligned`), so the frame is the
+only thing that knows both of a view's paper coordinates. The command takes them with
+`frame.paper_map().apply(centre)` — the same map the paper scene builder uses — rather than
+recomputing the grid. That keeps one arithmetic for the position a view is saved at and the position
+it is drawn at.
+
+**The two base views carry the scale; the projections follow them.** `standard_layout` fits one
+scale for all four, and the record expresses "follow" as a style field left out, so the front and
+isometric views save `scale` and the top and right views save no style at all. A later
+`drawing.view.set` on the front view therefore moves its projections' scale with it, which is what
+a user changing a drawing's scale expects.
+
+**Refused rather than guessed:** a sheet that already draws views (delete them first — re-running
+would double them, and there is no sensible merge), a sheet with no drawing border to lay them out
+in, a design with no bodies, a gap outside geom's 0-1000 mm, and a sheet too small for the four
+views at any preset scale, which comes back in `standard_layout`'s own words ("no preset scale fits
+these four views on this sheet: use a larger sheet or fewer views"). The component is not a
+parameter: `drawing_view::extents` measures every body the design places, so a component-scoped
+standard layout would fit its scale to the wrong extents. One view at a time
+(`drawing.view.base {component}`) is how a component is drawn until that is sorted.
+
+**What the test ties together**, in both projections: four views at one fitted scale, each centre
+inside the drawing border and off the built-in title block, the projections lined up with the front
+view on the sides the projection asks (below and left in first angle, above and right in third) —
+and the content the same either way, top and right, which is the thing #5866 and #4816 are both
+silent about.
+
+**Verified**, with the machine free again (the owner's render finished about 11:45, load back to
+7): `cargo fmt --all --check` clean; `cargo clippy -p solidcraft-geom --all-targets` and
+`-p solidcraft-engine --all-targets` silent; **309 geom lib tests** pass (the sides the layout now
+returns are asserted against the projection there); **50 engine tests matching `drawing`** pass
+(`--lib`), the two new ones among them.
+
+**The coverage that the one geometry-reaching command needed:** two strict-mode cases for its
+contract, `gap_mm` added to `hostile_drawing_params_never_panic`'s keys (so `standard_layout` sees
+NaN, infinity and 1e400 *through the command* instead of the call dying at `deny_unknown_fields`),
+and an assertion that the four views are **one** undo step of the drawing which `edit.undo` takes
+away and `edit.redo` brings back. That last one matters because `in_drawing()` without `doc_only()`
+is a combination no other command in the registry uses.
+
+**And the owed sweep is discharged:** `hostile_params_never_panic`, the engine-wide one that the
+view-commands commit deliberately skipped, **passes** — and it took **92 seconds** on this machine
+with the binary already built, not the ten minutes §5 had recorded from the laptop. §5 now says so,
+because that difference decides whether it is a check to run or one to defer. `cargo xtask ci` is
+still not run: free disk is 31 GB, half of §5's 60 GB line.
+
 
 **View commands — the five that edit the record: done on machine B, 2026-10-29.**
 
@@ -1016,9 +1086,8 @@ now says so): `ar`, `he` and `vi` are each missing the same 11 upstream `cmd.dra
 test stops at the first catalog it finds wanting, which is why only Arabic was named on 2026-10-28.
 This change does not add to it.
 
-**Left for the next session:** `drawing.view.standard` (the four-view layout, which reads the model
-for its extents, so it is the first drawing command that evaluates), `drawing.sheet.set` and
-`drawing.sheet.paper`, then Freshness and Update and the SVG export.
+**What came next, the same day:** `drawing.view.standard` (the note above it). Left after that:
+`drawing.sheet.paper`, `drawing.sheet.set`, Freshness and Update, and the SVG export.
 
 **Verified**, one crate at a time at two jobs, while the owner's own Fusion render had about ten
 cores of the machine (load 139, memory 76% free, so nothing like the 2026-10-28 conditions):

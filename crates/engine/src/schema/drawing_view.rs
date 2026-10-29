@@ -436,6 +436,37 @@ pub struct ViewDeleteParams {
     pub view: ViewId,
 }
 
+/// Lay the four standard views out on a sheet of the open drawing: the front view, the top and
+/// right views projected from it and lined up with it, and an isometric view in the cell they
+/// leave free, all at the largest preset scale that fits. One undo step of the drawing.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct StandardParams {
+    /// The sheet to lay them out on. A drawing with one sheet may leave it out.
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "SheetId")]
+    pub sheet: Option<SheetId>,
+    /// The space left between neighbouring views, in paper millimetres: 0 to 1000, and 10 when not
+    /// given.
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "f64")]
+    pub gap_mm: Option<f64>,
+}
+
+/// What `drawing.view.standard` returns: the views it saved and the scale it fitted them at.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct StandardResult {
+    /// The four views: the front view, the top and right views projected from it, and the
+    /// isometric view, in that order.
+    pub views: Vec<ViewRecordResult>,
+    /// The scale all four are drawn at, worked out to fit them on the sheet.
+    pub scale: ScaleResult,
+    /// In the warn parameter-check mode: what the call's parameters got wrong.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub param_warnings: Vec<String>,
+}
+
 /// A saved view's style, as the record keeps it: only the fields the view sets itself.
 #[derive(Debug, Default, Serialize, JsonSchema)]
 pub struct ViewStyleResult {

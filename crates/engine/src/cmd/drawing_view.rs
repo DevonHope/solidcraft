@@ -1,8 +1,11 @@
 //! Drawing view commands. `drawing.view.snapshot` (W07, #5866) works one orthographic view of the
 //! design out and returns it without saving anything: it reads the evaluated model and changes
-//! nothing. The others (W12) write the views a sheet keeps —
-//! `solidcraft_doc::drawing_view::View` — and evaluate nothing at all, because what a view draws
-//! is worked out when it is drawn, not when it is placed.
+//! nothing. The rest (W12) write the views a sheet keeps (`solidcraft_doc::drawing_view::View`).
+//!
+//! Of those, `base`, `projected`, `set` and `delete` **evaluate nothing**: what a view draws is
+//! worked out when it is drawn, not when it is placed, so each is a document edit and one undo step
+//! of the drawing. `standard` is the exception and reads the model, because the scale it fits and
+//! the four places it puts the views in follow the part's extents on four planes.
 //!
 //! The view's settings are `doc::drawing_view::ViewSettings`; its basis, scale and map onto
 //! paper are `geom::drawing_view`'s. Without a scale it takes the largest ISO 5455 scale at
@@ -16,8 +19,9 @@ use solidcraft_doc::drawing::{Drawing, MAX_VIEWS, Sheet as SheetRecord};
 use solidcraft_doc::drawing_view::{Looks, TangentEdges, View, ViewDirection, ViewStyle};
 use solidcraft_doc::ids::{self, IdSource};
 use solidcraft_doc::{MAX_PLACEMENT_DEPTH, MAX_PLACEMENTS};
+use solidcraft_geom::drawing_paper::kept_clear;
 use solidcraft_geom::drawing_sheet::{DrawingBorderProfile, Sheet};
-use solidcraft_geom::drawing_view::{NamedView, PRESETS, ProjectedSide, Scale, ViewFrame, projected_basis};
+use solidcraft_geom::drawing_view::{NamedView, PRESETS, ProjectedSide, Scale, StandardExtents, ViewFrame, projected_basis, standard_layout};
 use solidcraft_geom::paper::MAX_COORDINATE_MM;
 use solidcraft_geom::{Aabb2, Plane, Vec2};
 
@@ -25,8 +29,8 @@ use super::CommandSpec;
 use crate::params::bad;
 use crate::schema::drawing_view::{
     BaseParams, BoxResult, DPI_RANGE, ExtentsResult, LinesResult, LooksResult, ProjectedParams, SavedViewResult, ScaleResult, SheetId,
-    SnapshotParams, SnapshotResult, SourceResult, ViewDeleteParams, ViewDeletedResult, ViewRecordResult, ViewResult, ViewSetParams, ViewStyleField,
-    ViewStyleResult,
+    SnapshotParams, SnapshotResult, SourceResult, StandardParams, StandardResult, ViewDeleteParams, ViewDeletedResult, ViewRecordResult, ViewResult,
+    ViewSetParams, ViewStyleField, ViewStyleResult,
 };
 use crate::schema::{Point2, TypedContract, output_schema_for};
 use crate::{Result, Session};
@@ -37,6 +41,10 @@ const BASE: TypedContract<BaseParams> = TypedContract::new();
 const PROJECTED: TypedContract<ProjectedParams> = TypedContract::new();
 const SET: TypedContract<ViewSetParams> = TypedContract::new();
 const DELETE: TypedContract<ViewDeleteParams> = TypedContract::new();
+const STANDARD: TypedContract<StandardParams> = TypedContract::new();
+
+/// The space `drawing.view.standard` leaves between neighbouring views when the call doesn't say.
+const DEFAULT_GAP_MM: f64 = 10.0;
 
 pub static COMMANDS: &[CommandSpec] = &[CommandSpec::new(CMD, "Drawing View Snapshot", crate::checked!("drawing.view.snapshot", snapshot))
     .icon("export")
@@ -70,6 +78,14 @@ pub static COMMANDS: &[CommandSpec] = &[CommandSpec::new(CMD, "Drawing View Snap
         .output(output_schema_for::<SavedViewResult>)
         .params(
             "view: the view's id; position_mm?: [x, y] for a base view's centre, whose projections move with it; offset_mm?: how far a projected view sits from the view it comes from; style?: as drawing.view.base takes it; clear?: [style fields] to give back to what the view follows (scale, display_style, reference_style, reference_hides_model, reference_margin_mm, tangent_edges). Keys not given stay as they are; a field both given and cleared is refused → view: the view as saved. One undo step of the drawing.",
+        ),
+    CommandSpec::new("drawing.view.standard", "Standard Views", crate::checked!("drawing.view.standard", standard))
+        .in_drawing()
+        .icon("align")
+        .contract(&STANDARD)
+        .output(output_schema_for::<StandardResult>)
+        .params(
+            "sheet?: the sheet's id (drawing.inspect; a drawing with one sheet may leave it out); gap_mm?: the space between neighbouring views, 0 to 1000 paper mm (10 by default) → views: the front view, the top and right views projected from it, and an isometric view, in that order; scale: what they are all drawn at. The four go in the largest band of the drawing border beside the title block, at the largest ISO 5455 scale that fits them, in the drawing's projection. Unlike the other drawing commands this one reads the model, because the scale and the places follow the part's extents on four planes. The sheet must draw no views yet. One undo step of the drawing.",
         ),
     CommandSpec::new("drawing.view.delete", "Delete View", crate::checked!("drawing.view.delete", view_delete))
         .in_drawing()
@@ -443,6 +459,100 @@ fn view_set(s: &mut Session, p: &Value) -> Result<Value> {
         Ok(())
     })?;
     saved(s, cmd, id)
+}
+
+/// `drawing.view.standard`: the four views of the standard arrangement, saved on one sheet.
+///
+/// The only drawing command that reads the model. The scale and the four places come from the
+/// part's extents on the four planes (`geom::drawing_view::standard_layout`), so there is nothing
+/// to lay out without measuring it first.
+fn standard(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "drawing.view.standard";
+    let request: StandardParams = crate::schema::read(cmd, p)?;
+    let gap = request.gap_mm.unwrap_or(DEFAULT_GAP_MM);
+
+    // The sheet and what it keeps clear, before anything is measured: a sheet that can't take the
+    // views is refused without paying for the extents.
+    let d = s.drawing(cmd)?;
+    let i = sheet_index(cmd, d, request.sheet.as_ref())?;
+    let (sheet, projection) = (d.sheets[i].clone(), d.projection);
+    let source = d.sources.first().map(|source| source.id);
+    let source = source.ok_or_else(|| bad(cmd, "the drawing draws no design, so there is nothing to make views of"))?;
+    if !sheet.views.is_empty() {
+        return Err(bad(cmd, "the sheet already draws views: delete them first (drawing.view.delete)"));
+    }
+    let profile = sheet.border.as_ref().ok_or_else(|| bad(cmd, "the sheet has no drawing border for the views to be laid out in"))?;
+    let paper = profile.layout(&sheet.sheet).map_err(|e| bad(cmd, e.to_string()))?;
+    let clear = match &sheet.title_block {
+        Some(block) => {
+            let block = block.layout(&paper).map_err(|e| bad(cmd, e.to_string()))?;
+            Some(kept_clear(&block, paper.drawing_border))
+        }
+        None => None,
+    };
+
+    if !s.doc.placements_complete() {
+        let limits = format!("deeper than {MAX_PLACEMENT_DEPTH} levels or has more than {MAX_PLACEMENTS} placements");
+        return Err(bad(cmd, format!("the assembly is {limits}: views of it would leave parts out")));
+    }
+    let measured = |view: NamedView| crate::drawing_view::extents(s, &view.basis());
+    let (front, top, right, iso) =
+        (measured(NamedView::Front), measured(NamedView::Top), measured(NamedView::Right), measured(NamedView::IsoFrontRight));
+    if front.bodies == 0 {
+        return Err(bad(cmd, "the design has no bodies, so there is nothing to draw"));
+    }
+    let extents = StandardExtents { front: front.model, top: top.model, right: right.model, iso: iso.model };
+    let placed = standard_layout(&extents, paper.drawing_border, clear, projection, gap).map_err(|e| bad(cmd, e.to_string()))?;
+
+    // Where each view's centre lands on the paper, taken from the frame the layout built rather
+    // than worked out again: a projected frame derives the axis it shares with its parent, so this
+    // is the one place that knows both numbers.
+    let at = |frame: &ViewFrame, centre: Vec2| {
+        let on_paper = frame.paper_map().apply(centre);
+        [on_paper.x, on_paper.y]
+    };
+    let places = [
+        at(&placed.front, extents.front.center()),
+        at(&placed.top, extents.top.center()),
+        at(&placed.right, extents.right.center()),
+        at(&placed.iso, extents.iso.center()),
+    ];
+    let scale = placed.scale;
+    let (top_side, right_side) = (placed.top_side, placed.right_side);
+
+    let saved = s.edit_drawing(cmd, |d| {
+        let i = sheet_index(cmd, d, request.sheet.as_ref())?;
+        if !d.sheets[i].views.is_empty() {
+            return Err(bad(cmd, "the sheet already draws views: delete them first (drawing.view.delete)"));
+        }
+        let mut ids = IdSource::from_entropy();
+        let mut id = || d.allocate_id(&mut ids).map_err(|e| bad(cmd, e.to_string()));
+        let (front_id, top_id, right_id, iso_id) = (id()?, id()?, id()?, id()?);
+        // The two base views carry the scale the layout fitted; the projections follow them.
+        let of =
+            |id, position_mm, looks, scale| View { id, source, component: 0, position_mm, looks, style: ViewStyle { scale, ..ViewStyle::default() } };
+        let views = [
+            of(front_id, places[0], Looks::Base { view: ViewDirection::Named(NamedView::Front) }, Some(scale)),
+            of(top_id, places[1], Looks::Projected { from: front_id, side: top_side }, None),
+            of(right_id, places[2], Looks::Projected { from: front_id, side: right_side }, None),
+            of(iso_id, places[3], Looks::Base { view: ViewDirection::Named(NamedView::IsoFrontRight) }, Some(scale)),
+        ];
+        let sheet = Arc::make_mut(&mut d.sheets[i]);
+        for view in views {
+            add(cmd, sheet, view)?;
+        }
+        Ok([front_id, top_id, right_id, iso_id])
+    })?;
+
+    let d = s.drawing(cmd)?;
+    let on = &d.sheets[sheet_index(cmd, d, request.sheet.as_ref())?];
+    let mut views = Vec::with_capacity(saved.len());
+    for id in saved {
+        let view = on.views.iter().find(|view| view.id == id).ok_or_else(|| bad(cmd, "a view just saved is missing"))?;
+        views.push(record_of(cmd, d, on, view)?);
+    }
+    let fitted = ScaleResult { text: scale.to_string(), factor: scale.factor(), fitted: true };
+    reply(&StandardResult { views, scale: fitted, param_warnings: Vec::new() })
 }
 
 fn view_delete(s: &mut Session, p: &Value) -> Result<Value> {
