@@ -14,6 +14,7 @@ use solidcraft_doc::drawing_view::{TangentEdges, ViewDirection, ViewSettings, Vi
 use solidcraft_doc::ids;
 use solidcraft_geom::drawing_sheet::{Orientation, PaperSize, SheetSize};
 use solidcraft_geom::drawing_view::{NamedView, ProjectedSide, Scale};
+use solidcraft_geom::paper::{ObjectKind, Scene};
 use solidcraft_render::VisualStyle;
 
 use super::Point2;
@@ -434,6 +435,95 @@ pub struct ViewSetParams {
 #[schemars(deny_unknown_fields)]
 pub struct ViewDeleteParams {
     pub view: ViewId,
+}
+
+/// Work out the marks a sheet of the open drawing puts on paper. Read-only.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct PaperParams {
+    /// The sheet to work out. A drawing with one sheet may leave it out.
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "SheetId")]
+    pub sheet: Option<SheetId>,
+}
+
+/// A sheet's marks in paint order, in the paper format the SVG, DXF, PDF and PNG writers read
+/// (`solidcraft_geom::paper::Scene`). Described here rather than mirrored field for field: the
+/// format is defined and round-tripped in `geom`, and a second definition would drift from it.
+#[derive(Debug, Serialize)]
+#[serde(transparent)]
+pub struct SceneResult(pub Scene);
+
+impl JsonSchema for SceneResult {
+    fn schema_name() -> Cow<'static, str> {
+        "PaperScene".into()
+    }
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        let kinds: Vec<Value> = ObjectKind::ALL.iter().filter_map(|kind| serde_json::to_value(kind).ok()).collect();
+        let point = json!({"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2});
+        let stroke = json!({
+            "description": "A line `width_mm` wide along `path`, each piece starting where the one before ends; with `pattern` it is dashed.",
+            "type": "object",
+            "properties": {
+                "kind": {"const": "stroke"},
+                "path": {"type": "array", "items": {"type": "object", "description": "A piece of the path: a line {line: {a, b}} or an arc, as `geom::Seg2` writes it."}},
+                "closed": {"type": "boolean"},
+                "width_mm": {"type": "number", "exclusiveMinimum": 0},
+                "pattern": {"type": "object", "properties": {"lengths_mm": {"type": "array", "items": {"type": "number"}}, "phase_mm": {"type": "number"}}}
+            },
+            "required": ["kind", "path", "closed", "width_mm"]
+        });
+        let fill = json!({
+            "description": "A region painted solid, as `geom::Region2` writes it.",
+            "type": "object",
+            "properties": {"kind": {"const": "fill"}, "region": {"type": "object"}},
+            "required": ["kind", "region"]
+        });
+        json_schema!({
+            "description": "The sheet's marks in paint order: one group per object that drew any, each group's items painted in order, and the groups painted in the order they are given. The same format the paper writers read.",
+            "type": "object",
+            "properties": {
+                "size_mm": point,
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "object": {"description": "The id of the object that drew these items, as a number.", "type": "integer"},
+                            "kind": {"type": "string", "enum": kinds},
+                            "items": {"type": "array", "items": {"anyOf": [stroke, fill]}}
+                        },
+                        "required": ["object", "kind", "items"]
+                    }
+                }
+            },
+            "required": ["size_mm", "groups"]
+        })
+    }
+}
+
+/// What `drawing.sheet.paper` returns: the sheet's marks, and what each view settled on.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct PaperResult {
+    pub scene: SceneResult,
+    /// Each view the sheet draws, in the order its groups appear in the scene.
+    pub views: Vec<PaperViewResult>,
+    /// In the warn parameter-check mode: what the call's parameters got wrong.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub param_warnings: Vec<String>,
+}
+
+/// What one view of the sheet was drawn at.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct PaperViewResult {
+    pub id: String,
+    pub scale: ScaleResult,
+    /// How far a curved face may lie from the lines drawn for it, in model millimetres.
+    pub chord_mm: f64,
+    /// Runs of visible line, and of hidden line where the view's style draws them.
+    pub visible_runs: usize,
+    pub hidden_runs: usize,
 }
 
 /// Lay the four standard views out on a sheet of the open drawing: the front view, the top and

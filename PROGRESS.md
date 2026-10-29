@@ -22,10 +22,10 @@ Times in the log are local time on the machine that did the work, with the UTC o
 | **Branch** | `beta/drawings`, built on **0e3074ac** (2026-10-28's last commit). What is on it since, and which of those are on the fork, is `git log --oneline 0e3074ac..HEAD` and `git log --oneline origin/beta/drawings..HEAD` — this row named SHAs twice and counted commits once, and went stale all three times. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
 | **Pushed?** | The fork's branch is `origin/beta/drawings`, and **`git log --oneline origin/beta/drawings..HEAD` is the only honest answer** to what is still local — this row has gone stale twice by trying to say it in words. Every push so far went up with the owner's explicit OK. Another machine gets what is there with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
-| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Five of its nine items are done — exact view basis, view lines, standard layout, the paper scene builder, and the drawing session, which **needed no code** because #3891 is already in the branch. **Records** is done but for the `dimensions` and `notes` lists (moved to Phase 3), and the **view commands** but for `drawing.sheet.set` and `drawing.sheet.paper` ([§8.2](#82-phases-26-full-task-lists)). Left whole: **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
+| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Five of its nine items are done — exact view basis, view lines, standard layout, the paper scene builder, and the drawing session, which **needed no code** because #3891 is already in the branch. **Records** is done but for the `dimensions` and `notes` lists (moved to Phase 3), and the **view commands** but for `drawing.sheet.set` ([§8.2](#82-phases-26-full-task-lists)). Left whole: **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
 | **Running** | Nothing. |
 | **Last measured** | The chamfer case in [§8.6](#86-known-problems-and-fixes), 2026-10-28 on the Mac: the kernel's cost, and a test proving OK reuses the preview's evaluation. The report and its scripts are written and **not posted**. |
-| **Next action** | **`drawing.sheet.paper`**, the read-only scene JSON: it is the last piece between the saved views and a picture, and it composes `geom::drawing_paper::scene` with each view's `ViewLines` (the sheet's layout, its block and one group per view). Then `drawing.sheet.set`, **Freshness and Update**, and the **SVG export** `drawing.export {format: "svg"}` — the paper SVG writer itself already exists (#7430), so the export is the wiring ([§8.2](#82-phases-26-full-task-lists)). **The gate: settled** (2026-10-29) — doc, io, geom and engine one crate at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 RAYON_NUM_THREADS=2` and `nice -n 19`, and no workspace-wide build while free disk is under 60 GB ([§5](#5-working-rules-agreed-with-the-owner)). |
+| **Next action** | The **SVG export**, `drawing.export {format: "svg", path, sheet?}`: `drawing.sheet.paper` already gives a scene that io's `paper_svg` draws (an engine test takes it all the way), so this is the file-writing wiring — the safe-write path, no overwrite without a flag, and the browser build's download service ([§8.2](#82-phases-26-full-task-lists)). Then **Freshness and Update**, and `drawing.sheet.set`. **The gate: settled** (2026-10-29) — doc, io, geom and engine one crate at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 RAYON_NUM_THREADS=2` and `nice -n 19`, and no workspace-wide build while free disk is under 60 GB ([§5](#5-working-rules-agreed-with-the-owner)). |
 | **Blockers** | None. **One decision open for the owner:** the default projection is **first angle**, which is one line in `crates/doc/src/drawing.rs` if third angle is wanted ([§8.2](#82-phases-26-full-task-lists)). |
 
 ---
@@ -925,8 +925,8 @@ say "approximate (mesh)".
   - Add `ObjectKind::View`, `Dimension` and `Note`.
   - One group per view: visible strokes 0.5 mm, hidden strokes 0.25 mm dashed (#7430).
   - Mind the 100k-record cap per scene: simplify to paper tolerance.
-- [~] **View commands.** **Six of the eight are done (2026-10-29, machine B);** the notes below
-  record what they decide. `drawing.sheet.set` and `drawing.sheet.paper` are left.
+- [~] **View commands.** **Seven of the eight are done (2026-10-29, machine B);** the notes below
+  record what they decide. Only `drawing.sheet.set` is left.
   - [x] `drawing.view.base` and `drawing.view.projected` (the names #5349 reserves, checked against
     its branch);
   - [x] `drawing.view.standard`: the four views, at the one scale the layout fits, in the largest
@@ -937,7 +937,9 @@ say "approximate (mesh)".
     *drawing* (#3890), so the plan's id was taken. A base view takes the views projected from it
     with it; dimensions will join that cascade when they exist (Phase 3).
   - [ ] `drawing.sheet.set`; [x] `drawing.title_block.set` (the built-in block, or none).
-  - [ ] `drawing.sheet.paper` (read-only scene JSON).
+  - [x] `drawing.sheet.paper` (read-only scene JSON): the sheet's furniture, its block and a group
+    per view, in the paper format the writers read. An engine test takes it through `Scene::prepare`
+    into io's `paper_svg`, so the chain to a picture is proven here, not assumed.
   - [x] `drawing.inspect` reports each sheet's views and title block and the drawing's projection,
     and `drawing.set` takes `projection`: the records of 2026-10-29 were saved but unreadable
     before this.
@@ -947,6 +949,52 @@ say "approximate (mesh)".
   - A changed source marks views out of date.
   - `drawing.update` recomputes on the file worker, like `Kind::ExportDxf`. Never on the window thread; wasm runs it serially.
 - [ ] **SVG export.** `drawing.export {format: "svg", path, sheet?}` through the existing paper SVG writer.
+
+**`drawing.sheet.paper` — the sheet's marks, done on machine B, 2026-10-29.**
+
+The piece between the saved views and a picture. It returns the sheet's marks in the paper format
+the SVG, DXF, PDF and PNG writers read: the sheet border, the drawing border with its grid and
+marks, the title block, then one group per view with its hidden lines under its visible ones. It
+saves nothing, and it is the heaviest drawing command, because every view's hidden lines are
+worked out.
+
+**`crate::drawing_view::drawn` is the new piece**, and the freshness item will want it too: it
+turns a sheet's records into frames and lines. Base views first, since a projection is lined up
+with its parent's *frame* ([`ViewFrame::aligned`]), and two passes are enough because the record
+keeps a projection's parent a base view of the same sheet — the rule chosen this morning paying for
+itself. A view with no scale of its own is fitted to the drawing area around where it sits, with
+the snapshot's own rule, which is now one function used by both rather than two copies.
+
+**A projected view takes no scale of its own, and that came from geom rather than from taste.**
+`ViewFrame::aligned` draws a projection at its parent's scale — a frame cannot be both at another
+scale and lined up with one at a different scale. So `drawing.view.projected` and
+`drawing.view.set` refuse `style.scale` on a projection, and `drawn` refuses a file that carries
+one, all in the same words. A scaled view of part of a drawing is a *detail* view, which #5349
+reserves `drawing.view.detail` for.
+
+**What a style decides, and what is refused.** Hidden lines are drawn only where the style asks
+(`visible_hidden`); the shaded styles and `tangent_edges: show` are refused in the same words the
+snapshot uses, because the same two things are missing (#5624, #5866). A sheet with no drawing
+border is refused: there is no layout to lay marks out in, and nothing but a hand-written file can
+produce such a sheet.
+
+**The chain is proven, not assumed.** `the_scene_a_sheet_gives_is_one_the_svg_writer_draws` takes
+the command's scene through `Scene::prepare` into io's `paper_svg` and asserts an SVG document with
+at least seven paths and the A3 size in it, then does it again and compares bytes. That is the
+phase's done-when — "the SVG is correct ... two runs give identical bytes" — bar `drawing.export`,
+which is now only the file writing.
+
+**A measured correction to an assumption worth keeping:** a plain box seen **square on has no
+hidden lines at all** — its back edges project exactly onto its front ones, so nothing is behind
+anything. The first version of the hidden-line test asserted the opposite and failed. The test now
+looks from an isometric corner, where a box does hide the three edges at its far corner, and it
+asserts the square-on case as well, so the fact is recorded where the next person will meet it.
+
+**Verified** on a quiet machine: `cargo fmt --all --check` clean, `cargo clippy -p
+solidcraft-engine --all-targets` silent, `cargo xtask lists` ok, and **55 engine tests matching
+`drawing`** pass (`--lib`) — five of them new, the SVG chain among them. The seven command labels
+this branch has added are each in `en` with no other id carrying the same text, and in all five
+`COMPLETE` catalogs. `cargo xtask ci` still not run: free disk is 30 GB against §5's 60.
 
 **`drawing.view.standard` — the four views, done on machine B, 2026-10-29.**
 

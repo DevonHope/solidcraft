@@ -1,14 +1,20 @@
-//! Drawing views of the session's model (W07, #5866): what a view shows and how far it reaches.
-//! The snapshot command uses it now; saved views (W14) and their pictures (W17b) will too.
+//! Drawing views of the session's model (W07, #5866): what a view shows, how far it reaches, and
+//! what a view saved on a sheet draws when it is drawn ([`drawn`], W12).
 //!
 //! A view shows every body the design places, where its occurrences place it. The browser's eye
 //! counts for nothing: hiding a part in the model never changes a drawing.
 
 use std::collections::BTreeMap;
 
+use solidcraft_doc::drawing::{Drawing, Sheet};
+use solidcraft_doc::drawing_view::{Looks, View as Saved, ViewStyle};
+use solidcraft_doc::ids;
+use solidcraft_geom::drawing_view::{PRESETS, Scale, ViewFrame, projected_basis};
 use solidcraft_geom::{Aabb2, Plane, Vec2};
+use solidcraft_render::VisualStyle;
 
 use crate::mesh_lines::{self, View};
+use crate::params::bad;
 use crate::{Result, Session};
 
 /// How far a view reaches on its own plane, in model millimetres.
@@ -68,6 +74,113 @@ pub fn lines(s: &Session, cmd: &str, basis: &Plane, chord: f64) -> Result<ViewLi
     Ok(ViewLines { visible: pieces(false), hidden: pieces(true), chord_mm: chord, segments: drawing.segments })
 }
 
+/// The largest preset scale at which a view `size` (model mm), centred at `position`, lies inside
+/// `border`: the room is twice the distance from the position to the nearer side, each way. What
+/// a view with no scale of its own is drawn at.
+pub fn fit(cmd: &str, size: Vec2, position: Vec2, border: Aabb2) -> Result<Scale> {
+    let room =
+        Vec2::new(2.0 * (position.x - border.min.x).min(border.max.x - position.x), 2.0 * (position.y - border.min.y).min(border.max.y - position.y));
+    Scale::fit(size, room).ok_or_else(|| {
+        let name = |s: Option<&Scale>| s.map(|s| s.to_string()).unwrap_or_default();
+        let presets = format!("from {} to {}", name(PRESETS.first()), name(PRESETS.last()));
+        bad(cmd, format!("the view fits the sheet's drawing area at no preset scale {presets} here: give a scale, a position or a larger sheet"))
+    })
+}
+
+/// A view saved on a sheet, worked out: the frame it draws through, the scale it settled on and
+/// the lines it draws.
+#[derive(Clone, Debug)]
+pub struct Drawn {
+    /// The saved view's id.
+    pub view: u64,
+    pub frame: ViewFrame,
+    pub scale: Scale,
+    /// Whether the scale was fitted here rather than saved on the view.
+    pub fitted: bool,
+    pub visible: Vec<Vec<Vec2>>,
+    /// Empty unless the view's style draws hidden lines.
+    pub hidden: Vec<Vec<Vec2>>,
+}
+
+/// Every view `sheet` draws, worked out in the record's order, with `border` as its drawing area.
+///
+/// Base views are worked out first: a projection is lined up with the frame of the view it comes
+/// from ([`ViewFrame::aligned`]), so that frame has to exist before it. The record keeps a
+/// projection's parent a base view of the same sheet, so two passes are enough and there is no
+/// chain to walk.
+pub fn drawn(s: &Session, cmd: &str, d: &Drawing, sheet: &Sheet, border: Aabb2) -> Result<Vec<Drawn>> {
+    let mut frames: BTreeMap<u64, (ViewFrame, Scale, bool)> = BTreeMap::new();
+    for view in sheet.views.iter().filter(|view| matches!(view.looks, Looks::Base { .. })) {
+        let Looks::Base { view: direction } = view.looks else { continue };
+        let style = view.style;
+        let basis = direction.basis().map_err(|e| bad(cmd, e.to_string()))?;
+        let shown = measured(s, cmd, view, &basis, &style)?;
+        let at = Vec2::new(view.position_mm[0], view.position_mm[1]);
+        let (scale, fitted) = match style.scale {
+            Some(scale) => (scale, false),
+            None => (fit(cmd, shown.size(), at, border)?, true),
+        };
+        let frame = ViewFrame::new(basis, scale, shown.center(), at).map_err(|e| bad(cmd, e.to_string()))?;
+        frames.insert(view.id, (frame, scale, fitted));
+    }
+    for view in sheet.views.iter().filter(|view| matches!(view.looks, Looks::Projected { .. })) {
+        let Looks::Projected { from, side } = view.looks else { continue };
+        let parent = sheet.views.iter().find(|other| other.id == from);
+        let parent = parent.ok_or_else(|| bad(cmd, format!("view {} is projected from a view its sheet hasn't got", ids::encode(view.id))))?;
+        let style = view.style.over(&parent.style);
+        if view.style.scale.is_some() {
+            let how = "a projected view is drawn at the scale of the view it comes from, so it takes no scale of its own";
+            return Err(bad(cmd, format!("view {}: {how}", ids::encode(view.id))));
+        }
+        let (frame, scale, fitted) = *frames.get(&from).ok_or_else(|| bad(cmd, "a projection's base view was not worked out first"))?;
+        let basis = projected_basis(&frame.basis(), side, d.projection).map_err(|e| bad(cmd, e.to_string()))?;
+        let shown = measured(s, cmd, view, &basis, &style)?;
+        let at = Vec2::new(view.position_mm[0], view.position_mm[1]);
+        let turned = frame.aligned(side, d.projection, shown.center(), at).map_err(|e| bad(cmd, e.to_string()))?;
+        frames.insert(view.id, (turned, scale, fitted));
+    }
+
+    // The lines, in the record's order, so the scene's groups come out the same way twice.
+    let mut out = Vec::with_capacity(sheet.views.len());
+    for view in &sheet.views {
+        let (frame, scale, fitted) = *frames.get(&view.id).ok_or_else(|| bad(cmd, "a view was not worked out"))?;
+        let style = match view.looks {
+            Looks::Projected { from, .. } => {
+                sheet.views.iter().find(|other| other.id == from).map_or(view.style, |parent| view.style.over(&parent.style))
+            }
+            Looks::Base { .. } => view.style,
+        };
+        let basis = frame.basis();
+        let lines = lines(s, cmd, &basis, chord_mm(scale.factor()))?;
+        let hidden = if shows_hidden(&style) { lines.hidden } else { Vec::new() };
+        out.push(Drawn { view: view.id, frame, scale, fitted, visible: lines.visible, hidden });
+    }
+    Ok(out)
+}
+
+/// A view's extents on `basis`, with its reference margin added, refusing what cannot be drawn
+/// yet: the shaded styles need the drawing renderer (#5624), and tangent edges are decided by the
+/// mesh (#5866), exactly as `drawing.view.snapshot` refuses them.
+fn measured(s: &Session, cmd: &str, view: &Saved, basis: &Plane, style: &ViewStyle) -> Result<Aabb2> {
+    let named = ids::encode(view.id);
+    let shaded = style.display_style.is_some_and(VisualStyle::is_shaded) || style.reference_style.is_some_and(VisualStyle::is_shaded);
+    if shaded {
+        return Err(bad(cmd, format!("view {named}: not supported yet: shaded views need the drawing renderer (#5624)")));
+    }
+    if style.tangent_edges == Some(solidcraft_doc::drawing_view::TangentEdges::Show) {
+        return Err(bad(cmd, format!("view {named}: not supported yet: tangent_edges show needs the mesh edge classification (#5866)")));
+    }
+    let extents = extents(s, basis);
+    if extents.model.is_empty() {
+        return Err(bad(cmd, format!("view {named}: its source has no bodies")));
+    }
+    Ok(extents.model.inflated(style.reference_margin_mm.unwrap_or(0.0)))
+}
+
+/// Whether a view's style draws the lines a nearer surface covers.
+fn shows_hidden(style: &ViewStyle) -> bool {
+    matches!(style.display_style, Some(VisualStyle::VisibleHidden | VisualStyle::ShadedVisibleHidden))
+}
 /// Join segments end to end into polylines. A join where exactly two segments meet continues the
 /// run; a junction of three or more ends it, so a corner never invents a path through it. Points
 /// are matched on a grid relative to the drawing's extent, as the segments come from one

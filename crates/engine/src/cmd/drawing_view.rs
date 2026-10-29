@@ -21,9 +21,9 @@ use solidcraft_doc::ids::{self, IdSource};
 use solidcraft_doc::{MAX_PLACEMENT_DEPTH, MAX_PLACEMENTS};
 use solidcraft_geom::drawing_paper::kept_clear;
 use solidcraft_geom::drawing_sheet::{DrawingBorderProfile, Sheet};
-use solidcraft_geom::drawing_view::{NamedView, PRESETS, ProjectedSide, Scale, StandardExtents, ViewFrame, projected_basis, standard_layout};
+use solidcraft_geom::drawing_view::{NamedView, ProjectedSide, StandardExtents, ViewFrame, projected_basis, standard_layout};
 use solidcraft_geom::paper::MAX_COORDINATE_MM;
-use solidcraft_geom::{Aabb2, Plane, Vec2};
+use solidcraft_geom::{Plane, Vec2};
 
 use super::CommandSpec;
 use crate::params::bad;
@@ -42,6 +42,9 @@ const PROJECTED: TypedContract<ProjectedParams> = TypedContract::new();
 const SET: TypedContract<ViewSetParams> = TypedContract::new();
 const DELETE: TypedContract<ViewDeleteParams> = TypedContract::new();
 const STANDARD: TypedContract<StandardParams> = TypedContract::new();
+
+/// Why a projected view takes no scale of its own, in one place so both commands say it alike.
+const PROJECTED_SCALE: &str = "a projected view is drawn at the scale of the view it comes from, so it takes no scale of its own";
 
 /// The space `drawing.view.standard` leaves between neighbouring views when the call doesn't say.
 const DEFAULT_GAP_MM: f64 = 10.0;
@@ -129,7 +132,7 @@ fn snapshot(s: &mut Session, p: &Value) -> Result<Value> {
     let position = request.position_mm.map_or(paper * 0.5, |p| p.0);
     let (scale, fitted) = match settings.scale {
         Some(scale) => (scale, false),
-        None => (fit(shown.size(), position, border)?, true),
+        None => (crate::drawing_view::fit(CMD, shown.size(), position, border)?, true),
     };
     let frame = ViewFrame::new(basis, scale, shown.center(), position).map_err(|e| bad(CMD, e.to_string()))?;
     let boundary = frame.boundary(&shown).map_err(|e| bad(CMD, e.to_string()))?;
@@ -178,19 +181,6 @@ fn snapshot(s: &mut Session, p: &Value) -> Result<Value> {
         param_warnings: Vec::new(),
     };
     serde_json::to_value(reply).map_err(|e| crate::EngineError::Other(e.to_string()))
-}
-
-/// The largest preset scale at which a view `size` (model mm), centred at `position`, lies inside
-/// the drawing border: the room is twice the distance from the position to the nearer side,
-/// each way.
-fn fit(size: Vec2, position: Vec2, border: Aabb2) -> Result<Scale> {
-    let room =
-        Vec2::new(2.0 * (position.x - border.min.x).min(border.max.x - position.x), 2.0 * (position.y - border.min.y).min(border.max.y - position.y));
-    Scale::fit(size, room).ok_or_else(|| {
-        let name = |s: Option<&Scale>| s.map(|s| s.to_string()).unwrap_or_default();
-        let presets = format!("from {} to {}", name(PRESETS.first()), name(PRESETS.last()));
-        bad(CMD, format!("the view fits the sheet's drawing area at no preset scale {presets} here: give a scale, a position or a larger sheet"))
-    })
 }
 
 /// A unit enum's name as it reads and writes (`iso_front_right`, `visible_hidden`).
@@ -397,6 +387,11 @@ fn projected(s: &mut Session, p: &Value) -> Result<Value> {
     let from = ids::decode(&request.from.0).ok_or_else(|| bad(cmd, "`from` must be a view's id (drawing.inspect)"))?;
     let away = offset(cmd, request.offset_mm)?;
     let side = request.side.0;
+    // `ViewFrame::aligned` draws a projection at its parent's scale — a frame cannot be both at
+    // another scale and lined up — so a scale of its own is refused rather than quietly dropped.
+    if request.style.scale.is_some() {
+        return Err(bad(cmd, PROJECTED_SCALE));
+    }
     let style = request.style.over(ViewStyle::default());
     let id = s.edit_drawing(cmd, |d| {
         let (i, j) = view_index(cmd, d, from)?;
@@ -443,6 +438,9 @@ fn view_set(s: &mut Session, p: &Value) -> Result<Value> {
                 sheet.views[j].style = style;
             }
             Looks::Projected { from, side } => {
+                if request.style.scale.is_some() {
+                    return Err(bad(cmd, PROJECTED_SCALE));
+                }
                 if request.position_mm.is_some() {
                     let how = "a projected view stays lined up with the view it comes from, so it moves by `offset_mm`";
                     return Err(bad(cmd, format!("`position_mm` is for a base view: {how}")));
