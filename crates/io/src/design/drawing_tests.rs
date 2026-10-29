@@ -3,14 +3,19 @@ use std::io::{Cursor, Write};
 
 use serde_json::{Value, json};
 use solidcraft_doc::drawing::{MAX_DRAWINGS, Source};
+use solidcraft_doc::drawing_view::{Looks, View, ViewDirection, ViewStyle};
 use solidcraft_doc::format::DRAWING;
 use solidcraft_doc::ids::IdSource;
 use solidcraft_geom::drawing_sheet::{self, DrawingBorderProfile, Orientation, PaperSize};
+use solidcraft_geom::drawing_view::{NamedView, ProjectedSide};
+use solidcraft_geom::title_block::TitleBlock;
 
 use super::*;
 use crate::{read_design, write_design, write_design_container};
 
-/// A design with two drawings of it, each on one A3 sheet, in their order.
+/// A design with two drawings of it, each on one A3 sheet, in their order. Each sheet draws the
+/// design — a front view and the top view projected from it — under the built-in title block, so a
+/// round trip carries every kind of record a sheet holds.
 fn plate() -> Document {
     let mut ids = IdSource::seeded(3890);
     let mut doc = Document::new("Plate");
@@ -20,6 +25,25 @@ fn plate() -> Document {
         let mut d = Drawing::new(name, "en-GB", "Sheet 1", a3, Some(DrawingBorderProfile::iso()), &taken, &mut ids).unwrap();
         let id = d.allocate_id(&mut ids).unwrap();
         d.sources.push(Source { id });
+        let front = View {
+            id: d.allocate_id(&mut ids).unwrap(),
+            source: id,
+            component: 0,
+            position_mm: [140.0, 150.0],
+            looks: Looks::Base { view: ViewDirection::Named(NamedView::Front) },
+            style: ViewStyle::default(),
+        };
+        let top = View {
+            id: d.allocate_id(&mut ids).unwrap(),
+            position_mm: [140.0, 240.0],
+            looks: Looks::Projected { from: front.id, side: ProjectedSide::Above },
+            ..front
+        };
+        let sheet = Arc::make_mut(&mut d.sheets[0]);
+        sheet.title_block = Some(TitleBlock::built_in());
+        sheet.views = vec![front, top];
+        sheet.views.sort_by_key(|view| view.id);
+        d.validate().unwrap();
         doc.drawings.push(Arc::new(d));
     }
     doc

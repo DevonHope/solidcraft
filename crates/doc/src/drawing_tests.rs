@@ -1,5 +1,8 @@
 use serde_json::json;
 use solidcraft_geom::drawing_sheet::{Margins, Orientation, PaperSize, SheetSize};
+use solidcraft_geom::drawing_view::{NamedView, ProjectedSide, Scale};
+
+use crate::drawing_view::{ViewDirection, ViewStyle};
 
 use super::*;
 
@@ -26,11 +29,35 @@ fn plate() -> Drawing {
         name: "Bolt".into(),
         sheet: drawing_sheet::Sheet::standard(PaperSize::A4, Orientation::Portrait),
         border: Some(own_border()),
+        title_block: None,
         dpi: 600.0,
         documents: Some(SheetComponent { source: plate_id, component: 0 }),
         excluded: Excluded { count: false, print: true },
+        views: Vec::new(),
     }));
     Arc::make_mut(&mut d.sheets[0]).documents = Some(SheetComponent { source: plate_id, component: 7 });
+    // The first sheet draws the component it documents, with the built-in title block in the
+    // corner of its border: the front view at 1:2, and the top view projected from it, which
+    // follows its scale. Their ids come from the seed, so they are sorted into the record's order.
+    let front = View {
+        id: d.allocate_id(&mut id_source).unwrap(),
+        source: plate_id,
+        component: 7,
+        position_mm: [140.0, 150.0],
+        looks: Looks::Base { view: ViewDirection::Named(NamedView::Front) },
+        style: ViewStyle { scale: Some(Scale::new(1.0, 2.0).unwrap()), ..ViewStyle::default() },
+    };
+    let top = View {
+        id: d.allocate_id(&mut id_source).unwrap(),
+        position_mm: [140.0, 240.0],
+        looks: Looks::Projected { from: front.id, side: ProjectedSide::Above },
+        style: ViewStyle::default(),
+        ..front
+    };
+    let assembly = Arc::make_mut(&mut d.sheets[0]);
+    assembly.title_block = Some(TitleBlock::built_in());
+    assembly.views = vec![front, top];
+    assembly.views.sort_by_key(|view| view.id);
     d.properties.set(crate::metadata::Owner::Design, "author", json!("Jane Doe")).unwrap();
     d.units = Units::Fixed { unit: "in".into() };
     d.validate().unwrap();
@@ -89,6 +116,34 @@ fn a_drawing_reads_back_as_saved_and_saves_the_same_bytes_again() {
     assert_eq!(v["sheets"][0]["sheet"], json!({"size": {"standard": "a3"}, "orientation": "landscape"}));
     assert_eq!(v["sheets"][0]["documents"], json!({"source": plate_id, "component": 7}));
     assert_eq!(v["sheets"][0]["excluded"], json!({"count": false, "print": false}));
+    // The drawing's projection is always written, and the block is a copy of the built-in. A view
+    // says what it draws and where it sits, and nothing measured from the design; one that draws
+    // just what it follows saves no style at all. The views are in the record's order, by id.
+    assert_eq!(v["projection"], json!("first"));
+    assert_eq!(v["sheets"][0]["title_block"], serde_json::to_value(TitleBlock::built_in()).unwrap());
+    let view_of = |projected: bool| {
+        let found = d.sheets[0].views.iter().find(|view| matches!(view.looks, Looks::Projected { .. }) == projected);
+        let view = found.expect("the sheet's views");
+        let saved = v["sheets"][0]["views"].as_array().expect("the views as saved");
+        (view.id, saved.iter().find(|s| s["id"] == json!(ids::encode(view.id))).expect("the view as saved").clone())
+    };
+    let ((base_id, base), (top_id, top)) = (view_of(false), view_of(true));
+    assert_eq!(
+        base,
+        json!({
+            "id": ids::encode(base_id), "source": plate_id, "component": 7, "position_mm": [140.0, 150.0],
+            "looks": {"base": {"view": "front"}}, "style": {"scale": "1:2"}
+        })
+    );
+    assert_eq!(
+        top,
+        json!({
+            "id": ids::encode(top_id), "source": plate_id, "component": 7, "position_mm": [140.0, 240.0],
+            "looks": {"projected": {"from": ids::encode(base_id), "side": "above"}}
+        })
+    );
+    let order: Vec<&Value> = v["sheets"][0]["views"].as_array().expect("the views as saved").iter().map(|view| &view["id"]).collect();
+    assert!(order[0].as_str() < order[1].as_str(), "the views are saved by id: {order:?}");
     assert_eq!(
         v["sheets"][1],
         json!({
@@ -116,6 +171,20 @@ fn a_file_may_leave_out_what_has_a_default() {
     let sheet = &d.sheets[0];
     assert_eq!(sheet.sheet, drawing_sheet::Sheet::standard(PaperSize::A3, Orientation::Landscape));
     assert_eq!((sheet.border, sheet.dpi, sheet.documents, sheet.excluded), (None, DEFAULT_DPI, None, Excluded::default()));
+    assert_eq!((&sheet.title_block, sheet.views.as_slice(), d.projection), (&None, [].as_slice(), Projection::First));
+    // A drawing the build before this change saved — the owner's own files, as 0e3074ac writes
+    // them: the pending format number, and `in-design` alone, the one change that build knew. It
+    // reads, and what this change added comes out as a new drawing's. The name is written out
+    // rather than taken from `DRAWING.pending_names()` without its last entry, because pending
+    // changes are listed in file-name order: `sheet-dimensions` and `sheet-notes` will sort
+    // *before* `sheet-views`, and dropping the last name would build a file no build ever wrote.
+    let mut before = minimal.clone();
+    before["format"] = json!(DRAWING.format_string(DRAWING.current()));
+    before["format_pending"] = json!(["in-design"]);
+    let d = read(&before).unwrap();
+    let sheet = &d.sheets[0];
+    assert_eq!((&sheet.title_block, sheet.views.as_slice(), d.projection), (&None, [].as_slice(), Projection::First));
+    assert_eq!(d.format_pending, DRAWING.pending_names(), "saved again, it lists this build's changes");
     // The format as this build writes it, however the file spelt it.
     let mut spelt = minimal.clone();
     spelt["format"] = json!("solidcraft-drawing/+1");
@@ -237,7 +306,132 @@ fn a_border_is_saved_as_a_copy_of_its_profile() {
     edited["sheets"][0]["border"] = json!("iso");
     assert!(refusal(&edited).starts_with("damaged drawing: "));
     edited["sheets"][0]["border"] = Value::Null;
+    // A sheet with no border has no corner for a title block to sit in either, so that sheet's
+    // block goes with it (`a_title_block_is_a_copy_that_fits_the_sheets_drawing_border`).
+    edited["sheets"][0]["title_block"] = Value::Null;
     assert_eq!(read(&edited).unwrap().sheets[0].border, None, "no drawing border");
+}
+
+/// A sheet's title block is a copy of the block it was made from, as its border is a copy of its
+/// profile, and it is read only where it can be drawn: on a drawing border, inside it, cells and
+/// all. The very layout that draws it decides, so a block that reads is a block that draws.
+#[test]
+fn a_title_block_is_a_copy_that_fits_the_sheets_drawing_border() {
+    let v = file(&plate());
+    let assembly_id = ids::encode(plate().sheets[0].id);
+    assert_eq!(v["sheets"][0]["title_block"], serde_json::to_value(TitleBlock::built_in()).unwrap());
+    assert_eq!(v["sheets"][1].get("title_block"), None, "a sheet without a block saves no field");
+    assert_eq!(read(&v).unwrap().sheets[0].title_block, Some(TitleBlock::built_in()));
+    // A copy: an edited block reads as the file writes it, whatever the built-in says now.
+    let mut edited = v.clone();
+    edited["sheets"][0]["title_block"]["outline_line_mm"] = json!(0.5);
+    let thinner = TitleBlock { outline_line_mm: 0.5, ..TitleBlock::built_in() };
+    assert_eq!(read(&edited).unwrap().sheets[0].title_block, Some(thinner));
+    // Nothing for it to sit on, a sheet too small for it (it is 180 x 54 mm; A5 portrait's border
+    // is narrower), and a block that breaks the block's own rules.
+    let without = refused(&plate(), |v| v["sheets"][0]["border"] = Value::Null);
+    assert_eq!(without, format!("damaged drawing: sheet {assembly_id}: its title block sits on a drawing border, which it hasn't got"));
+    let small = refused(&plate(), |v| v["sheets"][0]["sheet"] = json!({"size": {"standard": "a5"}, "orientation": "portrait"}));
+    assert_eq!(small, format!("damaged drawing: sheet {assembly_id}: title block: a title block fits inside the drawing border"));
+    // A block makes the border's own layout part of reading the sheet, which is stricter than the
+    // profile's rules on their own: paper this border leaves no drawing space on is refused with a
+    // block on it, and read without one.
+    let paper = json!({"size": {"custom": {"sides_mm": [5000.0, 0.5]}}, "orientation": "landscape"});
+    let no_space = refused(&plate(), |v| v["sheets"][0]["sheet"] = paper.clone());
+    assert_eq!(no_space, format!("damaged drawing: sheet {assembly_id}: drawing sheet: the margins leave no drawing space"));
+    assert_eq!(
+        refused(&plate(), |v| {
+            v["sheets"][0]["sheet"] = paper.clone();
+            v["sheets"][0]["title_block"] = Value::Null;
+        }),
+        "read"
+    );
+    let inside_out = refused(&plate(), |v| v["sheets"][0]["title_block"]["cells"][0]["rect_mm"] = json!([10.0, 0.0, 0.0, 10.0]));
+    assert!(inside_out.starts_with(&format!("damaged drawing: sheet {assembly_id}: title block: ")), "{inside_out}");
+}
+
+/// What a sheet's views keep: the record's order and its cap, every reference resolving — the
+/// source each draws, and a base view of the same sheet for a projected one to be turned from —
+/// and a view's id being an object's id like any other.
+#[test]
+fn a_sheets_views_keep_the_records_rules() {
+    let d = plate();
+    let assembly_id = ids::encode(d.sheets[0].id);
+    let base = *d.sheets[0].views.iter().find(|view| matches!(view.looks, Looks::Base { .. })).expect("the base view");
+    let top = *d.sheets[0].views.iter().find(|view| matches!(view.looks, Looks::Projected { .. })).expect("the projected view");
+    let (base_id, top_id) = (ids::encode(base.id), ids::encode(top.id));
+    assert_eq!(read(&file(&d)).unwrap().sheets[0].views, d.sheets[0].views);
+    // Saved by id, lowest first: the order carries nothing, so a file that gives another is damaged.
+    let swapped = refused(&d, |v| v["sheets"][0]["views"].as_array_mut().expect("the views").swap(0, 1));
+    assert_eq!(swapped, format!("damaged drawing: sheet {assembly_id}: its views are saved by id, lowest first"));
+    // The cap, and a sheet that draws nothing.
+    let with_views = |n: u64| {
+        let one = |id: u64| serde_json::to_value(View { id, ..base }).expect("a view as JSON");
+        let mut v = file(&d);
+        v["sheets"][0]["views"] = Value::Array((1..=n).map(one).collect());
+        v
+    };
+    assert_eq!(read(&with_views(MAX_VIEWS as u64)).unwrap().sheets[0].views.len(), MAX_VIEWS);
+    assert_eq!(refusal(&with_views(MAX_VIEWS as u64 + 1)), format!("damaged drawing: sheet {assembly_id}: it draws at most {MAX_VIEWS} views"));
+    assert_eq!(read(&with_views(0)).unwrap().sheets[0].views.len(), 0);
+    // The source it draws is one of the drawing's: nothing, or an object of another kind.
+    for missing in [ids::encode(99), assembly_id.clone()] {
+        let why = refused(&d, |v| v["sheets"][0]["views"][0]["source"] = json!(missing));
+        let drawn = ids::encode(d.sheets[0].views[0].id);
+        assert_eq!(why, format!("damaged drawing: sheet {assembly_id}: view {drawn}: it draws source {missing}, which the drawing doesn't have"));
+    }
+    // What a projected view is turned from: a base view of its own sheet, and no other. Nothing,
+    // an object of another kind, itself — and a base view on the drawing's other sheet, which is
+    // the one that resolves and is still not its own sheet's.
+    let not_a_base =
+        |why: &str| format!("damaged drawing: sheet {assembly_id}: view {top_id}: it is projected from {why}, which is not a base view of its sheet");
+    for wrong in [ids::encode(99), assembly_id.clone(), top_id.clone()] {
+        assert_eq!(refusal(&projected_from(&d, &wrong)), not_a_base(&wrong), "projected from {wrong}");
+    }
+    let elsewhere = ids::encode(7);
+    let mut other_sheet = projected_from(&d, &elsewhere);
+    other_sheet["sheets"][1]["views"] = Value::Array(vec![serde_json::to_value(View { id: 7, ..base }).expect("a view as JSON")]);
+    assert_eq!(refusal(&other_sheet), not_a_base(&elsewhere));
+    // A projection shows what its base view shows: the same component of the same design.
+    let another = refused(&d, |v| {
+        for view in v["sheets"][0]["views"].as_array_mut().expect("the views") {
+            if view["looks"].get("projected").is_some() {
+                view["component"] = json!(3);
+            }
+        }
+    });
+    assert_eq!(
+        another,
+        format!("damaged drawing: sheet {assembly_id}: view {top_id}: it is projected from view {base_id}, which draws another component")
+    );
+    // A view's id is an object's id: no two objects share one, whatever kind they are.
+    assert_eq!(
+        refused(&d, |v| v["sheets"][0]["views"][0]["id"] = json!(assembly_id)),
+        format!("damaged drawing: two objects have the id {assembly_id}")
+    );
+    // In memory, where NaN can be, a view's own rule.
+    let mut in_memory = plate();
+    Arc::make_mut(&mut in_memory.sheets[0]).views[0].position_mm = [f64::NAN, 0.0];
+    let drawn = ids::encode(in_memory.sheets[0].views[0].id);
+    let rule = "drawing view: a view's position is finite and at most 5000 mm from the sheet's origin";
+    assert_eq!(in_memory.validate().unwrap_err().to_string(), format!("sheet {assembly_id}: view {drawn}: {rule}"));
+    for edge in [5000.0, -5000.0] {
+        assert_eq!(refused(&d, |v| v["sheets"][0]["views"][0]["position_mm"] = json!([edge, 0.0])), "read", "{edge} mm");
+    }
+    let off_paper = refused(&d, |v| v["sheets"][0]["views"][0]["position_mm"] = json!([5000.1, 0.0]));
+    assert_eq!(off_paper, format!("damaged drawing: sheet {assembly_id}: view {drawn}: {rule}"));
+}
+
+/// `d`'s file with the projected view of its first sheet turned from `from`, wherever the record's
+/// order put that view.
+fn projected_from(d: &Drawing, from: &str) -> Value {
+    let mut v = file(d);
+    for view in v["sheets"][0]["views"].as_array_mut().expect("the views") {
+        if view["looks"].get("projected").is_some() {
+            view["looks"]["projected"]["from"] = json!(from);
+        }
+    }
+    v
 }
 
 /// What reading refuses: each damage the rules name, refused rather than patched, and files this
@@ -277,8 +471,16 @@ fn damaged_files_are_refused_and_never_patched() {
         v["sources"].as_array_mut().unwrap().remove(0);
     });
     assert_eq!(without_plate, format!("damaged drawing: sheet {assembly_id}: it documents source {plate_id}, which the drawing doesn't have"));
-    // The paper, its border and its resolution, through the sheet's own rules.
-    let custom = |sides: Value| refused(&d, |v| v["sheets"][0]["sheet"]["size"] = json!({"custom": {"sides_mm": sides}}));
+    // The paper, its border and its resolution, through the sheet's own rules. A sheet at the
+    // limits of a custom size has no drawing space left to put a title block in, so that sheet's
+    // block goes with its paper here (`a_title_block_is_a_copy_that_fits_the_sheets_drawing_border`
+    // reads it the other way round).
+    let custom = |sides: Value| {
+        refused(&d, |v| {
+            v["sheets"][0]["sheet"]["size"] = json!({"custom": {"sides_mm": sides}});
+            v["sheets"][0]["title_block"] = Value::Null;
+        })
+    };
     assert_eq!(custom(json!([5000.0, 0.5])), "read");
     for sides in [json!([5000.1, 100.0]), json!([0.0, 100.0]), json!([-1.0, 100.0])] {
         let expected = format!("damaged drawing: sheet {assembly_id}: drawing sheet: a custom side is finite, above 0 and at most 5000 mm");

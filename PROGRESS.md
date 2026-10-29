@@ -18,15 +18,15 @@ Times in the log are local time on the machine that did the work, with the UTC o
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-28, end of the day's work, on the Mac (machine B, see [Machines](#machines)) |
-| **Branch** | `beta/drawings`: **4d148966**, the chamfer test, with this day's-end status update on top of it. **43ee8f7d** is the last commit of Phase 2 feature work. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
+| **Last updated** | 2026-10-29, morning, on the Mac (machine B, see [Machines](#machines)) |
+| **Branch** | `beta/drawings`: this session's **Records** commit on top of **0e3074ac**, and on the fork (`git log -1` for its SHA: naming it here is what went stale twice). **43ee8f7d** was the last Phase 2 feature commit before it. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
-| **Pushed?** | **Yes, everything**, to the fork as `origin/beta/drawings`, this day's-end update included, each push with the owner's explicit OK. 2026-10-28 went up in three: the standard layout and paper scene builder (d9711554), the chamfer measurements and the test that answered them (4d148966), and this. Another machine gets the lot with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
-| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Four of its seven items are done: Exact view basis and View lines (pushed), Standard layout and the Paper scene builder (committed, not pushed) ([§8.2](#82-phases-26-full-task-lists)). |
+| **Pushed?** | **Yes, everything**, to the fork as `origin/beta/drawings`, each push with the owner's explicit OK — the Records commit of 2026-10-29 included. Another machine gets the lot with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
+| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Five of its nine items are done — exact view basis, view lines, standard layout, the paper scene builder, and the drawing session, which **needed no code** because #3891 is already in the branch — and **Records** is done but for the `dimensions` and `notes` lists, which moved to Phase 3 ([§8.2](#82-phases-26-full-task-lists)). Left: the **view commands**, **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
 | **Running** | Nothing. |
 | **Last measured** | The chamfer case in [§8.6](#86-known-problems-and-fixes), 2026-10-28 on the Mac: the kernel's cost, and a test proving OK reuses the preview's evaluation. The report and its scripts are written and **not posted**. |
-| **Next action** | Phase 2's **Drawing session** ("K4-lite"), then **Records**, the **view commands**, **Freshness and Update** and the **SVG export**. **Settle the gate first:** the drawing session is the first item to touch `doc` and `engine`, so the one-crate check that covered the geom work no longer applies, and `cargo xtask ci` is what rebooted this Mac ([§5](#5-working-rules-agreed-with-the-owner)). Agree with the owner how to run it — capped, and in pieces — before starting, not after. |
-| **Blockers** | None. |
+| **Next action** | Phase 2's **view commands** (`drawing.view.base`, `.projected`, `.standard`, `.set`, `drawing.delete`, `drawing.sheet.set`, `drawing.title_block.set`, `drawing.sheet.paper`), which write the records this session added; `drawing.inspect` and `drawing.set` owe views, the title block and the projection as well ([§8.2](#82-phases-26-full-task-lists)). **The gate question is settled** (2026-10-29): gate doc, io and engine one crate at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 RAYON_NUM_THREADS=2` and `nice -n 19`, and run no workspace-wide build while free disk is under 60 GB ([§5](#5-working-rules-agreed-with-the-owner)). |
+| **Blockers** | None. **One decision open for the owner:** the default projection is **first angle**, which is one line in `crates/doc/src/drawing.rs` if third angle is wanted ([§8.2](#82-phases-26-full-task-lists)). |
 
 ---
 
@@ -786,6 +786,37 @@ Phase 7, with its plan in §8.8. Found while writing it:
 51f0c2d0, and **pushed to the fork** with the owner's OK (a5be5764 → 56861a46, then this note).
 Nothing is running. Next is Phase 2.
 
+### Session 5: Mac (machine B), 2026-10-29 morning (UTC−4)
+
+2026-10-28's two sessions left their record in [§8.2](#82-phases-26-full-task-lists) and
+[§8.6](#86-known-problems-and-fixes) rather than here (the standard layout, the paper scene
+builder, the chamfer measurements and the test that answered them). This entry picks the log up
+again.
+
+- **Checked the next item before starting it, and it was already done.** Phase 2's Drawing session
+  ("K4-lite") is in the branch: #3891 came in under #5867 at 09c3052f, and the schemas landed in
+  3232bbb0. The checklist now records each of its bullets against what is in the tree instead of
+  asking for a port. Had this not been checked, the session would have rewritten `cmd::Part`,
+  `Session::open_drawing` and `Snapshot::part` from a plan that predates them.
+- **Did the next item instead: Records** — a sheet's views and title block, and the drawing's
+  projection, with the one pending format file. The note in §8.2 holds the finding (a block makes
+  the border's layout part of reading a file), the two decisions (only a base view is projected
+  from; the style mirrors the settings) and the deferral of dimensions and notes to Phase 3.
+- **The gate question (§1's old Next action) was settled by the machine, not in advance.** Free
+  disk never rose above 44 GB, which is under §5's 60 GB line for a workspace build, so doc, io and
+  engine were gated one at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1
+  RAYON_NUM_THREADS=2` and `nice -n 19`. Nothing came near the 2026-10-28 reboot: load stayed
+  between 4 and 6, with the owner's own applications (Fusion, Firefox, Creative Cloud) already
+  running. 6.3 GB of `target/debug/incremental` was cleared mid-session; it is regenerable.
+- **A caught mistake worth keeping:** the first mutation run's output was piped through `tail -20`,
+  which threw away the first two results. The pipe hides what you came for — and in zsh it hides
+  the exit code as well (§5). Both were run again on their own.
+
+**State left:** Phase 2 is five of nine items done, with Records done but for the dimension and
+note lists. The branch is 0e3074ac plus this session's Records commit, **pushed to the fork** with
+the owner's OK. Nothing is running. Next is the view commands; one decision is open for the owner (the default
+projection).
+
 ---
 
 ## 8. Reference
@@ -827,34 +858,52 @@ say "approximate (mesh)".
 
 **Done when:** a script creates a drawing from a plate, adds the standard views and exports it, and the SVG is correct: front, top, right and iso views inside a bordered sheet, with dashed hidden lines. Two runs give identical bytes.
 
-- [ ] **Drawing session ("K4-lite").** Port the structure of #3891:
-  - `Session.drawing: Option<Box<DrawingFile>>` and `Snapshot.drawing`, so undo works per file;
-  - the per-command `Files` gate (Design, Drawing or Any);
-  - `DrawingFile`, holding the source part as a nested session (Open, Missing or Unreadable);
+- [x] **Drawing session ("K4-lite").** **Nothing to port: it is already in the branch** (checked
+  2026-10-29, machine B). #3891 came in under #5867, which is stacked on it (**09c3052f**), and
+  upstream's own landing of the same work is in the base. Each bullet as it stands:
+  - ~~`Session.drawing: Option<Box<DrawingFile>>` and `Snapshot.drawing`, so undo works per file~~ —
+    upstream's shape is `Document::drawings`, `Session::open_drawing` and `Snapshot::part`, which is
+    undo per drawing, tested by `drawing_edits_are_undo_steps_of_the_drawing_that_evaluate_nothing`
+    (`engine/src/cmd/drawing_tests.rs`).
+  - the per-command `Files` gate is `cmd::Part` (`Model`, `Drawing`, `Any`), set by `.any_part()`
+    and `.in_drawing()` (`engine/src/cmd/mod.rs:120`).
+  - ~~`DrawingFile`, holding the source part as a nested session (Open, Missing or Unreadable)~~ —
+    **dropped with D1:** the source is the design the drawing is in, so there is no file to be
+    missing or unreadable. Nothing by that name exists in the tree.
   - ~~`.scdwg` in `doc.open`, `file.save` and `file.save_as`~~ — **dropped with D1 on 2026-10-27.**
     A drawing lives inside the design's file, so there is no second file to open or save: the
     drawing rides on `doc.open`, `file.save` and `file.save_as` as they already are.
-  - Defer relink, locate and `source.execute`.
-  - Keep #3891's ids: `drawing.create`, `drawing.inspect`, `drawing.set`, `drawing.properties.set`.
-  - Add input and output schemas, which #3891 lacks. The pattern is `CommandSpec::new(...).contract(&C).output(output_schema_for::<T>)`; see `engine/src/cmd/features.rs:41`.
-- [ ] **Records.**
-  - `Sheet` gains `title_block`, `views`, `dimensions` and `notes`; the drawing gains `projection` (first or third).
-  - The format change is **one file** in `crates/doc/src/drawing/format/pending/`.
-  - Add a save → open round-trip test and a mutation fuzz case in `io/src/mutate.rs`.
-- [x] **Exact view basis.** Done 2026-10-28 (machine B), uncommitted. Add `View::orthographic(&Plane)` to `mesh_lines` (right = x, up = y, no perspective), fed by #4817's `NamedView::basis()`.
+  - Relink, locate and `source.execute` are absent, as the plan asked.
+  - The ids are all there: `drawing.create`, `drawing.inspect`, `drawing.set`,
+    `drawing.properties.set`, with `close`, `delete`, `list`, `open`, `properties`,
+    `properties.remove` and `drawing.view.snapshot`.
+  - Schemas: every one of those eleven commands has `.contract(&…)` and
+    `.output(output_schema_for::<…>)`, and `engine/src/schema/unconverted.txt` names none of them
+    (**3232bbb0**). `schema/coverage_tests.rs` enforces it.
+- [~] **Records.** **Views, the title block and the projection: done 2026-10-29 (machine B);**
+  dimensions and notes move to Phase 3, which is where what they reference is designed. The note
+  below records the findings.
+  - [x] `Sheet` gains `title_block` and `views` (`drawing_view::{View, Looks, ViewStyle}`); the
+    drawing gains `projection` (first or third).
+  - [ ] `dimensions` and `notes` — with Phase 3's **Notes** and **Dimensions** items, each its own
+    file in `drawing/format/pending/`.
+  - [x] The format change is **one file**: `crates/doc/src/drawing/format/pending/sheet-views.rs`.
+  - [x] A save → open round trip (`doc/src/drawing_tests.rs`, `io/src/design/drawing_tests.rs`) and
+    the mutation fuzz case (`io/src/mutate.rs`: the drawings case now carries views and a block).
+- [x] **Exact view basis.** Done 2026-10-28 (machine B), committed as **62eab387**. Add `View::orthographic(&Plane)` to `mesh_lines` (right = x, up = y, no perspective), fed by #4817's `NamedView::basis()`.
   - Going through the camera tilts top and bottom views by 1e-6 rad, which leaves stray stubs on vertical edges.
   - Test a view where faces are seen edge-on.
-- [x] **View lines (#5867's planned V3).** Done 2026-10-28 (machine B), uncommitted.
+- [x] **View lines (#5867's planned V3).** Done 2026-10-28 (machine B), committed as **62eab387**.
   - `ViewLines` is backend-neutral: visible and hidden pieces, with an accuracy of "sampled ± chord".
   - Build one mesh `Scene` per source and chord, shared by all views.
   - Chain the pieces into polylines.
   - Add `lines` and `status: approximate` to `drawing.view.snapshot`.
   - Chord = 0.01 mm on paper ÷ scale, clamped to 1e-4..1 mm. Add an option to show tangent edges.
-- [x] **Standard layout.** Done 2026-10-28 (machine B), uncommitted. A pure function in geom:
+- [x] **Standard layout.** Done 2026-10-28 (machine B), committed as **9285ecb9**. A pure function in geom:
   - fit the scale with `Scale::fit`;
   - place the projected views first- or third-angle, aligned on shared axes;
   - put the iso view in the free corner, clear of the title block.
-- [x] **Paper scene builder.** Done 2026-10-28 (machine B), uncommitted. `drawing_paper` in geom; the
+- [x] **Paper scene builder.** Done 2026-10-28 (machine B), committed as **43ee8f7d**. `drawing_paper` in geom; the
   note below records the two findings (the block's box, and the thinning's cost).
   - The sheet and border come from `SheetLayout`; nothing draws them yet.
   - The title block comes from #3877's `TitleBlock::layout`, plus **one built-in block of our own design**.
@@ -875,7 +924,135 @@ say "approximate (mesh)".
   - `drawing.update` recomputes on the file worker, like `Kind::ExportDxf`. Never on the window thread; wasm runs it serially.
 - [ ] **SVG export.** `drawing.export {format: "svg", path, sheet?}` through the existing paper SVG writer.
 
-**Paper scene builder — done on machine B, 2026-10-28, not yet committed.**
+**Records — views, the title block and the projection: done on machine B, 2026-10-29.**
+
+`crates/doc/src/drawing_view.rs` gains the saved `View`, `Looks` and `ViewStyle`, beside the
+`ViewSettings` a snapshot already took; `crates/doc/src/drawing.rs` gains `Sheet::title_block`,
+`Sheet::views`, `Drawing::projection` and `MAX_VIEWS`, with the rules in `validate`. The format
+change is the one file the plan asked for,
+`crates/doc/src/drawing/format/pending/sheet-views.rs`, and it needs **no step**: a drawing from
+before it has no views and no block, and reads as first angle. The drawing's format number does not
+move either, because 2 is already the number pending changes are written under; what changes is
+that a drawing now lists `in-design` **and** `sheet-views`. A file the build before this one saved
+reads with the new fields defaulted: `a_file_may_leave_out_what_has_a_default` builds that file with
+`format_pending: ["in-design"]` written out, which is what 0e3074ac and the installed Phase-1 beta
+write — the owner's own drawings. Written out, not derived from `DRAWING.pending_names()` without
+its last entry: pending changes are listed in **file-name** order, so `sheet-dimensions` and
+`sheet-notes` will sort *before* `sheet-views`, and dropping the last name would build a file no
+build ever wrote.
+
+**The Drawing session item needed no code at all**, which is worth knowing before anyone starts it:
+#3891 is in the branch already, pulled in under #5867 (09c3052f), and the checklist above now
+records each of its bullets against what is actually in the tree. Two of them were already dropped
+by D1. The checked facts: `cmd::Part` is the per-command gate, `Session::open_drawing` and
+`Snapshot::part` are undo per drawing, the eleven `drawing.*` commands all carry both schemas, and
+`unconverted.txt` names none of them. **The day's work was therefore the next item, Records.**
+
+**What a view saves — and what it refuses to save.** A view holds its id, the source and component
+it draws, `position_mm` (where its centre sits on the paper), `looks` and `style`. It holds
+*nothing measured from the design*: no extents, no lines, no basis. `drawing.update` works those
+out again, so editing the part a drawing draws rewrites no view, and two runs write the same bytes.
+The record refuses `extents_mm`, `lines` and `basis` outright (`deny_unknown_fields`), which is the
+assertion that keeps a later hand from "caching" them there.
+
+A view's position is bounded by `MAX_SIDE_MM` (5000 mm), the same bound `ViewFrame::new` takes, so
+a view that reads is a view that can be placed. It is **not** required to lie on its sheet: a view
+dragged off the paper is a drawing to fix, not a file to refuse, and refusing it would strand the
+drawing it is in.
+
+**The finding: a title block makes the border's layout part of reading the file, which is
+stricter than the border's own rules.** Checking a block means laying it out, and laying it out needs the
+sheet's `SheetLayout`, so `check_title_block` runs `profile.layout(&paper)` and then
+`block.layout(&layout)` — the very code that draws it, so a block that reads is a block that draws.
+Two consequences, both now asserted:
+- a sheet with a block **has** a drawing border (there is nowhere else for it to sit), and
+- paper the border leaves no drawing space on is refused *with* a block and read *without* one.
+
+The second one failed an existing test the moment the fixture gained a block:
+`damaged_files_are_refused_and_never_patched` asserted that a 5000 x 0.5 mm custom sheet reads, and
+with a block on it the answer is now "the margins leave no drawing space". That test says so
+explicitly in both directions rather than being quietly weakened.
+
+**Decision: a projected view is turned from a *base* view only, so there is no cycle to chase.**
+The obvious shape — a projected view naming any view of its sheet — makes a reader walk a chain and
+refuse a loop, which is a walk on hostile input with a depth to cap. Narrowing the rule to
+"the view it is projected from is a base view of the same sheet" removes the walk entirely: a chain
+cannot exist, so there is nothing to loop. The standard layout needs no more than this (top and
+right are projected from front; the isometric view is a base view of its own), and loosening the
+rule later is format-safe, because every file valid under the narrow rule stays valid under a wider
+one. A projection must also draw the same component as its base: a projection shows the object its
+parent shows, or it is not one.
+
+**Decision: `ViewStyle` mirrors `ViewSettings`, each field optional.** `doc/src/drawing_view.rs`
+already said a saved view "keeps the same fields, each one optional so that a projected view can
+follow its parent" (#5867's note, for W12), so this follows it rather than inventing a second shape:
+the same six fields less the direction, which `Looks` holds, each an `Option`. `over` is the
+inheritance (its own where it has one, its parent's where it hasn't) and `settings` turns the result
+into the `ViewSettings` the snapshot path already understands. A view that draws just what it
+follows saves no `style` field at all.
+
+**The projection default is first angle — one constant, and the owner's call.** Nothing upstream
+settles it: `cell.rs` defines `Projection` for `drawing.projection` but gives it no default, and
+neither #5349 nor #5867 nor the docs choose one. First angle is what every other default here
+follows (ISO 5457's border, ISO 5455's scales, A3 paper, ISO 128-2's dashes), so the record follows
+them. **If the owner wants third angle** — the convention in North America, and most US-sold CAD's
+default — it is `default_projection()` in `crates/doc/src/drawing.rs`, one line, and no saved
+drawing changes, because every drawing writes its own projection into its file.
+
+**Deliberately not here: dimensions and notes.** The plan's Records item lists four lists on a
+sheet; this change adds the two that Phase 2 needs and moves the other two to the Phase 3 items
+that design them (both checklists now say so). The reason is not effort: a dimension record *is*
+its references, and Phase 3's Dimensions item is where those are specified
+(`{view, body, edge_name, end?, at_model}`), down to how a dangling one is reported. Guessing them
+a week early, in a format file, is the one kind of guess a format change makes expensive. Each will
+be its own file in `drawing/format/pending/`, which is exactly how that folder is meant to be used.
+
+Six mutations of the new rules, all caught:
+
+| mutation | caught by |
+|---|---|
+| `ids()` leaves a sheet's views out | the view given the sheet's own id: "two objects have the id" stops firing |
+| the views need not be saved in id order | the swapped pair reads instead of being refused |
+| a projected view may be turned from any view, not just a base one | the view projected from *itself* reads |
+| a title block needs no drawing border | the sheet whose border was taken away reads |
+| an empty style is written out | the byte-for-byte assert, and the view record's own JSON |
+| a view's position need only be finite | 5000.1 mm reads — and `mutated_files_give_an_error_or_a_valid_drawing_never_a_panic` fails too, so the drawing fuzz test guards the bound as well |
+
+**Owed by the next item (view commands).** Nothing writes a view yet, and `drawing.inspect` still
+reports a sheet as `{id, name, size_mm, orientation, dpi, documents, excluded}`, so views, the
+title block and the projection are saved but not reported. Both belong with
+`drawing.view.base`/`drawing.view.projected`/`drawing.view.standard`, and `drawing.set` should take
+`projection` there too. The record is deliberately ahead of the commands: the commands can now be
+written against a shape that is already tested.
+
+**Verified**, one crate at a time at two jobs, because the full gate rebooted this Mac on
+2026-10-28 ([§5](#5-working-rules-agreed-with-the-owner)):
+
+- `cargo fmt --all --check` clean.
+- `cargo clippy -p solidcraft-doc --all-targets` and `-p solidcraft-io --all-targets` silent. Said
+  exactly: that is the **dev** profile without `-D warnings`, while the gate runs clippy
+  workspace-wide on the `ci` profile with `-D warnings` (`xtask/src/main.rs:406`). Nothing warned
+  at all, so the flag would change nothing, but the gate's own run did not happen.
+- **497 doc lib tests pass**, 23 of them the drawing ones: four tests are new (two for a sheet's
+  views and its block, two for the view record itself) and three were extended.
+- **io: 6 drawing tests pass**, `a_designs_drawings_round_trip_through_both_forms_byte_for_byte` and
+  `designs_with_drawings_survive_mutation` among them — both fixtures now carry views and a block,
+  so the container round trip and the fuzz case cover them.
+- **engine: 40 tests matching `drawing` pass** (`--lib`), including `replies_match_the_output_schemas`
+  and `hostile_drawing_params_never_panic`. The engine builds its reply types itself
+  (`schema::drawing::SheetResult`), so the record's new fields cannot reach an output schema by
+  accident — and do not reach it at all yet, which is the item above.
+- `scripts/test-format-pending.sh`: ok — two pending changes still merge without a conflict and
+  fold into the next number, a drawing's into its own `v2`.
+- **`cargo xtask ci` was not run.** Free disk was 38–44 GB all session, under the 60 GB §5 asks for
+  before a workspace-wide build, and the gate is what rebooted this machine. What bounds the risk:
+  `git grep -ln 'solidcraft-drawing/|"in-design"'` outside `crates/doc/src` finds **nothing**, so no
+  golden or fixture anywhere embeds a drawing record; only `doc`, `io` and `engine` name
+  `doc::drawing` at all; and the change adds fields, with no enum or signature altered, so nothing
+  downstream can fail to compile that a struct literal would not have caught (the only literals are
+  in `doc` and one `io` test, both updated).
+
+**Paper scene builder — done on machine B, 2026-10-28, committed as 43ee8f7d.**
 
 `drawing_paper` in geom: `scene(sheet, title_block, views)` turns a laid-out `SheetLayout`, a
 `TitleBlockLayout` and each view's runs into a `paper::Scene`. It composes laid-out geometry only
@@ -950,7 +1127,7 @@ test binaries pass, the geom one with all 309. The 4 failures are inherited — 
 ones with values identical to the previous run, and the Arabic catalog's missing `cmd.drawing_*`
 ids, which is new to this log but older than this branch's work ([§8.6](#86-known-problems-and-fixes)).
 
-**Standard layout — done on machine B, 2026-10-28, not yet committed.**
+**Standard layout — done on machine B, 2026-10-28, committed as 9285ecb9.**
 
 `standard_layout`, `StandardExtents` and `StandardLayout` in `geom/src/drawing_view.rs`, beside
 the types they compose. #4817 already gave `ProjectedSide`, `Projection`, `projected_basis` and
@@ -977,7 +1154,7 @@ Verified: 299 geom lib tests pass, clippy `--all-targets` is silent, `cargo fmt`
 title-block guard is mutation-checked. `cargo xtask ci` has **not** been run — geom is layer 0, so
 it rebuilds everything below it and is close to a full 54-minute gate.
 
-**Phase 2, the first two items — done on machine B, 2026-10-28, not yet committed.**
+**Phase 2, the first two items — done on machine B, 2026-10-28, committed as 62eab387.**
 
 - `View::orthographic(&Plane)` in `mesh_lines/projection.rs`, beside `from_camera`. It returns
   `Result` and **checks** the basis (finite, unit, square to 1e-9) rather than squaring it up: the
@@ -1015,7 +1192,16 @@ been run.
   - A missing glyph is an error, not a box.
 - [ ] **Title-block fields.** Fill them from `drawing.properties` and the source's name and part number. Render them with #3877's cell rule.
 - [ ] **Notes.** `drawing.note {sheet, text, at_mm, height_mm?, angle?, anchor?}` and `drawing.note.set`.
+  - **The sheet's `notes` record comes with this item**, as one more file in
+    `crates/doc/src/drawing/format/pending/`. Phase 2's Records left it here on purpose: what a note
+    holds is settled by the command that writes it, and an empty list in the record buys nothing
+    (2026-10-29).
 - [ ] **Dimensions.** `drawing.dimension {view, kind: horizontal|vertical|aligned|radius|diameter, refs, text_mm?}` and `drawing.dimension.set`.
+  - **The sheet's `dimensions` record comes with this item** (its own file in
+    `crates/doc/src/drawing/format/pending/`), for the same reason as the notes above: this item
+    designs the references a dimension keeps, and those references *are* the record.
+    `geom/src/drawing_measure.rs` (W19a, #4896) says so itself — "the dimension record (W19b) keeps
+    what to measure".
   - **References** store `{view, body, edge_name, end?, at_model}`, with names from `doc::naming::edge_names`. View lines must carry their source edge; mesh edge indexes match `Body::edges`.
   - **On Update:**
     - resolve by name, then the nearest edge (`locate_named_edge`, `doc/src/project.rs:360`);

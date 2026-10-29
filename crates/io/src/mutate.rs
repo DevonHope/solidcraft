@@ -525,12 +525,16 @@ outer
         survives("design JSON", &mutations(&json, true, 0xde6), usize::MAX, |b| crate::read_design(b).ok().map(|d| d.features.len()));
     }
 
-    /// A design with two drawings, as a container and as plain JSON: every mutation gives an error
-    /// or a design, never a panic, and never more drawings than a design may hold.
+    /// A design with two drawings, each sheet drawing two views under a title block, as a container
+    /// and as plain JSON: every mutation gives an error or a design, never a panic, and never more
+    /// drawings than a design may hold.
     #[test]
     fn designs_with_drawings_survive_mutation() {
         use solidcraft_doc::drawing::{Drawing, MAX_DRAWINGS, Source};
+        use solidcraft_doc::drawing_view::{Looks, View, ViewDirection, ViewStyle};
         use solidcraft_geom::drawing_sheet::{DrawingBorderProfile, Orientation, PaperSize, Sheet};
+        use solidcraft_geom::drawing_view::{NamedView, ProjectedSide};
+        use solidcraft_geom::title_block::TitleBlock;
         let mut ids = solidcraft_doc::ids::IdSource::seeded(0xd4a);
         let mut doc = solidcraft_doc::Document::new("Fuzz");
         for name in ["Assembly", "Details"] {
@@ -539,6 +543,25 @@ outer
             let mut drawing = Drawing::new(name, "en", "Sheet 1", a3, Some(DrawingBorderProfile::iso()), &taken, &mut ids).unwrap();
             let id = drawing.allocate_id(&mut ids).unwrap();
             drawing.sources.push(Source { id });
+            let front = View {
+                id: drawing.allocate_id(&mut ids).unwrap(),
+                source: id,
+                component: 0,
+                position_mm: [140.0, 150.0],
+                looks: Looks::Base { view: ViewDirection::Named(NamedView::Front) },
+                style: ViewStyle::default(),
+            };
+            let top = View {
+                id: drawing.allocate_id(&mut ids).unwrap(),
+                position_mm: [140.0, 240.0],
+                looks: Looks::Projected { from: front.id, side: ProjectedSide::Above },
+                ..front
+            };
+            let sheet = std::sync::Arc::make_mut(&mut drawing.sheets[0]);
+            sheet.title_block = Some(TitleBlock::built_in());
+            sheet.views = vec![front, top];
+            sheet.views.sort_by_key(|view| view.id);
+            drawing.validate().unwrap();
             doc.drawings.push(drawing.into());
         }
         let container = crate::write_design_container(&doc).unwrap();

@@ -9,13 +9,18 @@
 //! - **Sources** are the designs it draws. For now a drawing draws the design it is in: at most one
 //!   source, an id and nothing else. What the design was when the drawing last saw it is not saved
 //!   here.
-//! - **Sheets**: the paper, a copy of its drawing border, the resolution its pictures are rendered
-//!   at, the component it documents, and whether it is left out of the sheet count or of printing.
-//!   The border is a copy of the profile it was made with, never a name, so a later built-in never
-//!   changes a saved drawing.
-//! - **Units** follow each view's design or are one length unit for the whole drawing. The
-//!   **language** is the content's, a BCP 47 tag chosen when the drawing is made, whatever the
-//!   interface's is. **Properties** follow [`Metadata`]'s rules.
+//! - **Sheets**: the paper, a copy of its drawing border and of its title block, the resolution its
+//!   pictures are rendered at, the component it documents, whether it is left out of the sheet
+//!   count or of printing, and the views it draws. The border and the block are copies of what they
+//!   were made from, never a name, so a later built-in never changes a saved drawing.
+//! - **Views** ([`View`]) say what they draw, which way they look and where they sit on the paper,
+//!   and nothing that was measured from the design: a view's extents and lines come from the design
+//!   again. A **base view** looks where it says; a **projected view** is turned a quarter turn from
+//!   a base view of the same sheet, so no view follows a chain of them.
+//! - **Units** follow each view's design or are one length unit for the whole drawing, and the
+//!   **projection** (first or third angle) is the drawing's, read by its views and its title
+//!   blocks' symbols. The **language** is the content's, a BCP 47 tag chosen when the drawing is
+//!   made, whatever the interface's is. **Properties** follow [`Metadata`]'s rules.
 //!
 //! The rules, which every later kind of record (views, annotations, tables) keeps too:
 //! - Every object has an id of [`crate::ids`]: random, so objects added side by side never take
@@ -23,7 +28,8 @@
 //!   never gives a removed object's id again ([`Drawing::allocate_id`]).
 //! - Every reference between records is an id and must resolve: a file with one that doesn't is
 //!   damaged and refused, never patched.
-//! - 1 to [`MAX_SHEETS`] sheets; names of 1 to [`MAX_NAME_BYTES`] bytes.
+//! - 1 to [`MAX_SHEETS`] sheets, each drawing at most [`MAX_VIEWS`] views; names of 1 to
+//!   [`MAX_NAME_BYTES`] bytes.
 //! - Nothing derived is saved, and a drawing always saves as the same bytes: fields in their
 //!   order, maps sorted, and lists of records in a fixed order (sheets as arranged; later
 //!   records by id), never the order they were added in.
@@ -38,8 +44,11 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use solidcraft_geom::cell::Projection;
 use solidcraft_geom::drawing_sheet::{self, DrawingBorderProfile};
+use solidcraft_geom::title_block::TitleBlock;
 
+use crate::drawing_view::{Looks, View};
 use crate::format::DRAWING;
 use crate::ids::{self, IdSource};
 use crate::{DocError, Metadata, Result, expr};
@@ -48,6 +57,9 @@ use crate::{DocError, Metadata, Result, expr};
 pub const MAX_DRAWINGS: usize = 1000;
 /// The most sheets a drawing may have.
 pub const MAX_SHEETS: usize = 1000;
+/// The most views one sheet may draw: what a reader takes, not what is sensible. A drawing of
+/// more than [`MAX_DRAWING_BYTES`] of them is refused by its size.
+pub const MAX_VIEWS: usize = 1000;
 /// The longest name of a drawing or a sheet, in bytes.
 pub const MAX_NAME_BYTES: usize = 256;
 /// The longest language tag: what RFC 5646 asks every reader to take (§4.4.1).
@@ -86,6 +98,11 @@ pub struct Drawing {
     pub units: Units,
     /// The language of the drawing's content, a BCP 47 tag (`en-GB`).
     pub language: String,
+    /// The projection its views are drawn in, first or third angle (ISO 5456-2): one for the whole
+    /// drawing, which the views and the title block's symbol both read. Always saved, so a drawing
+    /// never leaves which one it means to a later build's default.
+    #[serde(default = "default_projection")]
+    pub projection: Projection,
     /// In order, each behind its own `Arc`, so an undo step shares every sheet it didn't change.
     pub sheets: Vec<Arc<Sheet>>,
 }
@@ -121,6 +138,11 @@ pub struct Sheet {
     pub sheet: drawing_sheet::Sheet,
     /// A copy of the drawing border's profile (`None`: no drawing border).
     pub border: Option<DrawingBorderProfile>,
+    /// A copy of the title block drawn in the lower-right corner of its drawing border (`None`: no
+    /// title block). A copy, like `border`, so a later built-in never changes a saved drawing; a
+    /// sheet with a block has a border for it to sit on, and the block fits inside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_block: Option<TitleBlock>,
     /// The resolution its pictures (its shaded views) are rendered at, in dots per inch.
     #[serde(default = "default_dpi")]
     pub dpi: f64,
@@ -128,6 +150,9 @@ pub struct Sheet {
     pub documents: Option<SheetComponent>,
     #[serde(default)]
     pub excluded: Excluded,
+    /// The views it draws, by id: at most [`MAX_VIEWS`], each of one of the drawing's sources.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub views: Vec<View>,
 }
 
 /// A component of one of the drawing's designs.
@@ -155,6 +180,13 @@ fn default_dpi() -> f64 {
     DEFAULT_DPI
 }
 
+/// The projection a drawing that doesn't say uses: first angle, the convention of the standards
+/// every other default here follows (ISO 5457's border, ISO 5455's scales, A3 paper). A drawing
+/// saves its own, so changing this never changes a saved one.
+fn default_projection() -> Projection {
+    Projection::First
+}
+
 impl Drawing {
     /// A drawing of no designs yet, named `name` and written in `language`, with one sheet named
     /// `sheet`: the paper `paper` with a copy of `border`. Its id, and then its sheet's, come from
@@ -170,8 +202,17 @@ impl Drawing {
     ) -> Result<Drawing> {
         let id = id_source.next(taken)?;
         let sheet_id = id_source.next(&BTreeSet::from([id]))?;
-        let first =
-            Sheet { id: sheet_id, name: sheet.into(), sheet: paper, border, dpi: DEFAULT_DPI, documents: None, excluded: Excluded::default() };
+        let first = Sheet {
+            id: sheet_id,
+            name: sheet.into(),
+            sheet: paper,
+            border,
+            title_block: None,
+            dpi: DEFAULT_DPI,
+            documents: None,
+            excluded: Excluded::default(),
+            views: Vec::new(),
+        };
         let drawing = Drawing {
             format: DRAWING.format_string(DRAWING.current()),
             format_pending: DRAWING.pending_names(),
@@ -181,6 +222,7 @@ impl Drawing {
             properties: Metadata::default(),
             units: Units::default(),
             language: language.into(),
+            projection: default_projection(),
             sheets: vec![Arc::new(first)],
         };
         drawing.validate()?;
@@ -227,7 +269,8 @@ impl Drawing {
     /// Every object's id, of every kind: what a new id must differ from. Each later kind adds its
     /// own here.
     fn ids(&self) -> impl Iterator<Item = u64> {
-        std::iter::once(self.id).chain(self.sources.iter().map(|s| s.id)).chain(self.sheets.iter().map(|s| s.id))
+        let sheets = self.sheets.iter().flat_map(|s| std::iter::once(s.id).chain(s.views.iter().map(|v| v.id)));
+        std::iter::once(self.id).chain(self.sources.iter().map(|s| s.id)).chain(sheets)
     }
 
     /// The record's rules (the module's notes): what reading a drawing checks, and what every edit
@@ -255,7 +298,8 @@ impl Drawing {
         Ok(())
     }
 
-    /// A sheet's own rules, and that the source it documents is one of the drawing's.
+    /// A sheet's own rules, and that every source it names — the component it documents, and each
+    /// view's — is one of the drawing's.
     fn check_sheet(&self, sheet: &Sheet) -> Result<()> {
         check_name(&sheet.name, "its")?;
         sheet.sheet.size_mm().map_err(from_sheet)?;
@@ -263,14 +307,52 @@ impl Drawing {
             border.validate().map_err(from_sheet)?;
         }
         require((MIN_DPI..=MAX_DPI).contains(&sheet.dpi), || format!("its pictures are {MIN_DPI} to {MAX_DPI} dpi"))?;
-        match sheet.documents {
-            Some(SheetComponent { source, .. }) => {
-                let named = || format!("it documents source {}, which the drawing doesn't have", ids::encode(source));
-                require(self.sources.iter().any(|s| s.id == source), named)
-            }
-            None => Ok(()),
+        if let Some(SheetComponent { source, .. }) = sheet.documents {
+            let named = || format!("it documents source {}, which the drawing doesn't have", ids::encode(source));
+            require(self.sources.iter().any(|s| s.id == source), named)?;
         }
+        check_title_block(sheet)?;
+        self.check_views(sheet)
     }
+
+    /// A sheet's views: at most [`MAX_VIEWS`], saved by id as the record's rules ask, and each
+    /// keeping [`check_view`](Drawing::check_view)'s.
+    fn check_views(&self, sheet: &Sheet) -> Result<()> {
+        require(sheet.views.len() <= MAX_VIEWS, || format!("it draws at most {MAX_VIEWS} views"))?;
+        require(sheet.views.windows(2).all(|pair| pair[0].id < pair[1].id), || "its views are saved by id, lowest first".into())?;
+        sheet
+            .views
+            .iter()
+            .try_for_each(|view| self.check_view(sheet, view).map_err(|e| DocError::Invalid(format!("view {}: {e}", ids::encode(view.id)))))
+    }
+
+    /// One view: its own rules, the source it draws, and what a projected view is projected from —
+    /// a base view of the same sheet, drawing the same component, so no view follows a chain and
+    /// a projection always shows the object its parent shows.
+    fn check_view(&self, sheet: &Sheet, view: &View) -> Result<()> {
+        view.validate().map_err(|e| DocError::Invalid(e.to_string()))?;
+        let named = || format!("it draws source {}, which the drawing doesn't have", ids::encode(view.source));
+        require(self.sources.iter().any(|s| s.id == view.source), named)?;
+        if let Looks::Projected { from, .. } = view.looks {
+            let base = sheet.views.iter().find(|v| v.id == from && matches!(v.looks, Looks::Base { .. }));
+            let base =
+                base.ok_or_else(|| DocError::Invalid(format!("it is projected from {}, which is not a base view of its sheet", ids::encode(from))))?;
+            let same = (base.source, base.component) == (view.source, view.component);
+            require(same, || format!("it is projected from view {}, which draws another component", ids::encode(from)))?;
+        }
+        Ok(())
+    }
+}
+
+/// A sheet's title block: it sits in the corner of the sheet's drawing border, so a sheet with one
+/// has a border, and the block keeps its own rules and fits inside that border, cells and all. Laid
+/// out by the very code that draws it, so a block that reads is a block that can be drawn.
+fn check_title_block(sheet: &Sheet) -> Result<()> {
+    let Some(block) = &sheet.title_block else { return Ok(()) };
+    let border = sheet.border.as_ref().ok_or_else(|| DocError::Invalid("its title block sits on a drawing border, which it hasn't got".into()))?;
+    let layout = border.layout(&sheet.sheet).map_err(from_sheet)?;
+    block.layout(&layout).map_err(from_block)?;
+    Ok(())
 }
 
 /// A design's drawings as read, each checked on its own already: in their order (by name, then id)
@@ -331,6 +413,10 @@ fn damaged(e: impl std::fmt::Display) -> DocError {
 }
 
 fn from_sheet(e: drawing_sheet::Invalid) -> DocError {
+    DocError::Invalid(e.to_string())
+}
+
+fn from_block(e: solidcraft_geom::title_block::Invalid) -> DocError {
     DocError::Invalid(e.to_string())
 }
 
