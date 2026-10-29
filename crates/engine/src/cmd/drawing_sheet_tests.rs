@@ -166,3 +166,122 @@ fn the_scene_a_sheet_gives_is_one_the_svg_writer_draws() {
     let (again, _) = solidcraft_io::paper::paper_svg(&scene.prepare().expect("it prepares")).expect("it writes as SVG");
     assert_eq!(again, bytes, "the same sheet gives the same SVG, byte for byte");
 }
+
+/// The export writes the sheet as the SVG its scene gives, never onto a file that is already
+/// there unless it is told to, and writes the same bytes for the same sheet.
+#[test]
+fn the_export_writes_the_sheet_and_never_overwrites_unasked() {
+    let dir = std::env::temp_dir().join(format!("solidcraft-drawing-export-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a folder to write into");
+    let path = dir.join("plate.svg");
+    let _ = std::fs::remove_file(&path);
+    let name = path.to_string_lossy().to_string();
+    let mut s = standard();
+
+    let written = run(&mut s, "drawing.export", json!({"format": "svg", "path": name}));
+    assert_eq!((written["format"].clone(), written["path"].clone()), (json!("svg"), json!(name)));
+    let bytes = std::fs::read(&path).expect("the file the call says it wrote");
+    assert_eq!(written["bytes"].as_u64().unwrap_or_default() as usize, bytes.len());
+    let text = String::from_utf8(bytes.clone()).expect("the SVG is text");
+    assert!(text.contains("<svg") && text.contains("420"), "an A3 document: {}", &text[..text.len().min(120)]);
+    assert_eq!(written["views"].as_array().map(Vec::len), Some(4), "the four standard views");
+    assert_eq!(written["snapped"], json!({"widths": 0, "pieces": 0, "dashes": 0}), "nothing had to move onto the writer's grid");
+
+    // Not onto a file that is already there, and the refused call leaves it as it was.
+    let why_not = why(&mut s, "drawing.export", json!({"format": "svg", "path": name}));
+    assert!(why_not.contains("already there") && why_not.contains("overwrite"), "{why_not}");
+    assert_eq!(std::fs::read(&path).expect("still there"), bytes, "a refused export left the file alone");
+
+    run(&mut s, "drawing.export", json!({"format": "svg", "path": name, "overwrite": true}));
+    assert_eq!(std::fs::read(&path).expect("written again"), bytes, "the same sheet writes the same bytes");
+    let _ = std::fs::remove_file(&path);
+}
+
+/// What the export refuses: a format that isn't there yet — named, rather than called unknown —
+/// and a path that is no path. Neither writes anything.
+#[test]
+fn the_export_refuses_a_format_it_hasnt_got() {
+    let mut s = standard();
+    let gone = std::env::temp_dir().join(format!("solidcraft-drawing-never-{}.svg", std::process::id()));
+    let name = gone.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&gone);
+    for (format, says) in [("dxf", "not supported yet"), ("pdf", "not supported yet"), ("png", "not supported yet"), ("ps", "`format` is")] {
+        let why_not = why(&mut s, "drawing.export", json!({"format": format, "path": name}));
+        assert!(why_not.contains(says), "{format}: {why_not}");
+    }
+    assert!(why(&mut s, "drawing.export", json!({"format": "svg", "path": "   "})).contains("`path`"));
+    assert!(!gone.exists(), "a refused export wrote a file anyway");
+}
+
+/// The phase's done-when, in one test: a script makes a drawing of a plate, puts the standard
+/// views on it, asks for hidden lines, and exports it — and the SVG holds four views inside a
+/// bordered sheet with its title block, the hidden lines dashed, and two runs give the same bytes.
+#[test]
+fn a_script_draws_a_plate_and_exports_a_sheet_with_dashed_hidden_lines() {
+    let mut s = standard();
+    // Hidden lines are a style, so the script asks for them on each view it wants them on.
+    let views = run(&mut s, "drawing.inspect", json!({}))["sheets"][0]["views"].as_array().expect("the views").clone();
+    assert_eq!(views.len(), 4);
+    for view in &views {
+        let id = view["id"].as_str().expect("a view's id").to_string();
+        run(&mut s, "drawing.view.set", json!({"view": id, "style": {"display_style": "visible_hidden"}}));
+    }
+    let drawn = run(&mut s, "drawing.sheet.paper", json!({}));
+    let hidden: u64 = drawn["views"].as_array().expect("the views").iter().filter_map(|view| view["hidden_runs"].as_u64()).sum();
+    assert!(hidden > 0, "no hidden lines to dash");
+
+    let dir = std::env::temp_dir().join(format!("solidcraft-drawing-done-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a folder to write into");
+    let path = dir.join("plate.svg");
+    let _ = std::fs::remove_file(&path);
+    let name = path.to_string_lossy().to_string();
+    run(&mut s, "drawing.export", json!({"format": "svg", "path": name, "overwrite": true}));
+    let first = std::fs::read(&path).expect("the file");
+    let text = String::from_utf8(first.clone()).expect("the SVG is text");
+    assert!(text.contains("<svg") && text.contains("420") && text.contains("297"), "an A3 sheet");
+    // The dashed stroke, read off the document rather than looked for loosely: ISO 128-2's hidden
+    // line is half the visible one (0.25 mm against 0.5), dashed 12d and gapped 3d — 3 and 0.75 mm.
+    let dashed = text.lines().find(|line| line.contains("stroke-dasharray")).expect("a dashed stroke");
+    assert!(dashed.contains("stroke-width=\"0.25\""), "{dashed}");
+    assert!(dashed.contains("stroke-dasharray=\"3 0.75\""), "{dashed}");
+    run(&mut s, "drawing.export", json!({"format": "svg", "path": name, "overwrite": true}));
+    assert_eq!(std::fs::read(&path).expect("written again"), first, "two runs give identical bytes");
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Two runs of the same script, in two sessions: what in the SVG is the same and what isn't.
+///
+/// **The same drawing exported twice gives the same bytes. Two drawings of the same part do not**,
+/// and in two ways: the writer puts each group's object id in the document (`<g data-object="…">`)
+/// and a drawing's ids come from entropy, *and* a sheet keeps its views sorted by id (the record's
+/// rule for later records), so the groups come out in a different order as well. The marks
+/// themselves are identical, which is what this test holds down — see PROGRESS.md §8.2 for the
+/// question it leaves open about a sheet's paint order.
+#[test]
+fn two_drawings_of_one_part_draw_the_same_marks_in_their_own_order() {
+    let svg = |s: &mut Session| {
+        let dir = std::env::temp_dir().join(format!("solidcraft-drawing-twice-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder to write into");
+        let path = dir.join(format!("sheet-{}.svg", s.uid));
+        let name = path.to_string_lossy().to_string();
+        run(s, "drawing.export", json!({"format": "svg", "path": name, "overwrite": true}));
+        let text = std::fs::read_to_string(&path).expect("the file");
+        let _ = std::fs::remove_file(&path);
+        text
+    };
+    let (mut first, mut second) = (standard(), standard());
+    let (a, b) = (svg(&mut first), svg(&mut second));
+    // The same drawing, exported twice: the same bytes. That is reproducible output in practice.
+    assert_eq!(svg(&mut first), a, "one drawing exported twice");
+    // Two drawings of the same part: the same marks, and only the ids and the order of the groups
+    // between them. Sorting the paths compares the marks without their order.
+    assert_ne!(a, b, "if these matched, neither the ids nor the order would be in the document");
+    let paths = |text: &str| {
+        let mut lines: Vec<&str> = text.lines().filter(|line| line.starts_with("<path")).collect();
+        lines.sort_unstable();
+        lines.join("\n")
+    };
+    assert_eq!(paths(&a), paths(&b), "two drawings of one part drew different marks, not just a different order");
+    let groups = |text: &str| text.lines().filter(|line| line.starts_with("<g ")).count();
+    assert_eq!((groups(&a), groups(&b)), (7, 7), "the same seven groups either way");
+}

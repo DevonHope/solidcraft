@@ -18,6 +18,7 @@ use solidcraft_geom::paper::{ObjectKind, Scene};
 use solidcraft_render::VisualStyle;
 
 use super::Point2;
+use super::check::whole;
 
 /// The lowest and highest picture resolution a sheet takes, in dots per inch.
 pub const DPI_RANGE: std::ops::RangeInclusive<f64> = 25.0..=2400.0;
@@ -435,6 +436,85 @@ pub struct ViewSetParams {
 #[schemars(deny_unknown_fields)]
 pub struct ViewDeleteParams {
     pub view: ViewId,
+}
+
+/// Write a sheet of the open drawing to a file. Read-only: the drawing is not changed.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct ExportParams {
+    pub format: ExportFormat,
+    /// The file to write. An existing file is not replaced unless `overwrite` says so.
+    pub path: String,
+    /// The sheet to write. A drawing with one sheet may leave it out.
+    #[serde(default, deserialize_with = "super::present")]
+    #[schemars(with = "SheetId")]
+    pub sheet: Option<SheetId>,
+    /// Replace a file that is already at `path`. Without it, writing onto one is refused.
+    #[serde(default)]
+    pub overwrite: bool,
+}
+
+/// The file a sheet is written as.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ExportFormat {
+    Svg,
+}
+
+impl<'de> Deserialize<'de> for ExportFormat {
+    /// What the handler takes, in its words, and naming the formats that are coming rather than
+    /// calling them unknown.
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let later = ["dxf", "pdf", "png"];
+        match Value::deserialize(d)? {
+            Value::String(name) if name == "svg" => Ok(ExportFormat::Svg),
+            Value::String(name) if later.contains(&name.as_str()) => {
+                Err(D::Error::custom(whole(format!("not supported yet: {name} comes with the drawing's other exports; `format` is \"svg\" today"))))
+            }
+            _ => Err(D::Error::custom(whole("`format` is \"svg\""))),
+        }
+    }
+}
+
+impl JsonSchema for ExportFormat {
+    fn schema_name() -> Cow<'static, str> {
+        "DrawingExportFormat".into()
+    }
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "description": "The file to write the sheet as. Only svg today; dxf, pdf and png follow.",
+            "type": "string",
+            "enum": ["svg"]
+        })
+    }
+}
+
+/// What `drawing.export` returns: the file it wrote and what went into it.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ExportResult {
+    pub path: String,
+    pub format: String,
+    /// How long the file is, in bytes.
+    pub bytes: usize,
+    /// What the writer had to move onto its grid to draw the sheet: nothing, on a drawing that
+    /// was laid out in whole nanometres.
+    pub snapped: SnappedResult,
+    /// Each view the sheet draws, as `drawing.sheet.paper` reports them.
+    pub views: Vec<PaperViewResult>,
+    /// In the warn parameter-check mode: what the call's parameters got wrong.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub param_warnings: Vec<String>,
+}
+
+/// What a writer moved onto its grid.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SnappedResult {
+    /// Line widths under half a grid step, drawn one step wide.
+    pub widths: usize,
+    /// Pieces too short for the grid, merged into the next.
+    pub pieces: usize,
+    /// Dashes and gaps under half a step, drawn one step long.
+    pub dashes: usize,
 }
 
 /// Work out the marks a sheet of the open drawing puts on paper. Read-only.

@@ -1,7 +1,7 @@
 use serde_json::json;
 use solidcraft_doc::drawing_view::ViewSettings;
 
-use super::{BaseParams, PaperParams, ProjectedParams, SnapshotParams, StandardParams, ViewDeleteParams, ViewSetParams};
+use super::{BaseParams, ExportParams, PaperParams, ProjectedParams, SnapshotParams, StandardParams, ViewDeleteParams, ViewSetParams};
 use crate::schema::input_schema_for;
 use crate::schema::tests::{assert_keys, assert_strict_keeps_todays_errors};
 
@@ -26,6 +26,7 @@ fn schemas_and_the_key_check_agree() {
     assert_keys(input_schema_for::<ViewDeleteParams>(), &["view"]);
     assert_keys(input_schema_for::<StandardParams>(), &["gap_mm", "sheet"]);
     assert_keys(input_schema_for::<PaperParams>(), &["sheet"]);
+    assert_keys(input_schema_for::<ExportParams>(), &["format", "overwrite", "path", "sheet"]);
 }
 
 /// The contract takes the view's settings field for field, plus the sheet and the position, so

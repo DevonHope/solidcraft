@@ -1,5 +1,6 @@
 {
   "en": {
+    "cmd.drawing_export": "Export Drawing",
     "cmd.drawing_sheet_paper": "Paper Scene",
     "cmd.drawing_title_block_set": "Title Block",
     "cmd.drawing_view_base": "Base View",
@@ -9,6 +10,7 @@
     "cmd.drawing_view_standard": "Standard Views"
   },
   "ar": {
+    "cmd.drawing_export": "تصدير الرسم",
     "cmd.drawing_sheet_paper": "مشهد الورقة",
     "cmd.drawing_title_block_set": "خانة العنوان",
     "cmd.drawing_view_base": "العرض الأساسي",
@@ -18,6 +20,7 @@
     "cmd.drawing_view_standard": "العروض القياسية"
   },
   "de": {
+    "cmd.drawing_export": "Zeichnung exportieren",
     "cmd.drawing_sheet_paper": "Papierszene",
     "cmd.drawing_title_block_set": "Schriftfeld",
     "cmd.drawing_view_base": "Basisansicht",
@@ -27,6 +30,7 @@
     "cmd.drawing_view_standard": "Standardansichten"
   },
   "he": {
+    "cmd.drawing_export": "ייצוא שרטוט",
     "cmd.drawing_sheet_paper": "סצנת הגיליון",
     "cmd.drawing_title_block_set": "שדה כתובית",
     "cmd.drawing_view_base": "תצוגת בסיס",
@@ -36,6 +40,7 @@
     "cmd.drawing_view_standard": "תצוגות תקניות"
   },
   "ja": {
+    "cmd.drawing_export": "図面をエクスポート",
     "cmd.drawing_sheet_paper": "用紙シーン",
     "cmd.drawing_title_block_set": "表題欄",
     "cmd.drawing_view_base": "基準ビュー",
@@ -45,6 +50,7 @@
     "cmd.drawing_view_standard": "標準ビュー"
   },
   "ko": {
+    "cmd.drawing_export": "도면 내보내기",
     "cmd.drawing_sheet_paper": "용지 장면",
     "cmd.drawing_title_block_set": "표제란",
     "cmd.drawing_view_base": "기준 보기",
@@ -54,6 +60,7 @@
     "cmd.drawing_view_standard": "표준 보기"
   },
   "vi": {
+    "cmd.drawing_export": "Xuất bản vẽ",
     "cmd.drawing_sheet_paper": "Nội dung trang giấy",
     "cmd.drawing_title_block_set": "Khung tên",
     "cmd.drawing_view_base": "Hình chiếu gốc",
@@ -63,6 +70,7 @@
     "cmd.drawing_view_standard": "Hình chiếu tiêu chuẩn"
   },
   "zh": {
+    "cmd.drawing_export": "导出绘图",
     "cmd.drawing_sheet_paper": "图纸场景",
     "cmd.drawing_title_block_set": "标题栏",
     "cmd.drawing_view_base": "基本视图",

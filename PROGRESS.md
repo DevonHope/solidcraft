@@ -22,10 +22,10 @@ Times in the log are local time on the machine that did the work, with the UTC o
 | **Branch** | `beta/drawings`, built on **0e3074ac** (2026-10-28's last commit). What is on it since, and which of those are on the fork, is `git log --oneline 0e3074ac..HEAD` and `git log --oneline origin/beta/drawings..HEAD` — this row named SHAs twice and counted commits once, and went stale all three times. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
 | **Pushed?** | The fork's branch is `origin/beta/drawings`, and **`git log --oneline origin/beta/drawings..HEAD` is the only honest answer** to what is still local — this row has gone stale twice by trying to say it in words. Every push so far went up with the owner's explicit OK. Another machine gets what is there with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
-| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Five of its nine items are done — exact view basis, view lines, standard layout, the paper scene builder, and the drawing session, which **needed no code** because #3891 is already in the branch. **Records** is done but for the `dimensions` and `notes` lists (moved to Phase 3), and the **view commands** but for `drawing.sheet.set` ([§8.2](#82-phases-26-full-task-lists)). Left whole: **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
+| **Phase** | **Phase 2 of 6 (headless drawing core): in progress; its done-when is met bar one measured exception** (two *drawings* of one part write the same marks but not the same bytes — [§8.2](#82-phases-26-full-task-lists)). Six of its nine items are done outright — exact view basis, view lines, standard layout, the paper scene builder, the drawing session (which **needed no code**: #3891 was already in the branch) and the **SVG export** — and two are part-done: **Records** but for the `dimensions` and `notes` lists, which moved to Phase 3, and the **view commands** but for `drawing.sheet.set`. Left whole: **Freshness and Update** ([§8.2](#82-phases-26-full-task-lists)). |
 | **Running** | Nothing. |
 | **Last measured** | The chamfer case in [§8.6](#86-known-problems-and-fixes), 2026-10-28 on the Mac: the kernel's cost, and a test proving OK reuses the preview's evaluation. The report and its scripts are written and **not posted**. |
-| **Next action** | The **SVG export**, `drawing.export {format: "svg", path, sheet?}`: `drawing.sheet.paper` already gives a scene that io's `paper_svg` draws (an engine test takes it all the way), so this is the file-writing wiring — the safe-write path, no overwrite without a flag, and the browser build's download service ([§8.2](#82-phases-26-full-task-lists)). Then **Freshness and Update**, and `drawing.sheet.set`. **The gate: settled** (2026-10-29) — doc, io, geom and engine one crate at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 RAYON_NUM_THREADS=2` and `nice -n 19`, and no workspace-wide build while free disk is under 60 GB ([§5](#5-working-rules-agreed-with-the-owner)). |
+| **Next action** | **Freshness and Update**, the last whole item of Phase 2: cache a view's lines against the view record, the source's document id and revision, the build and the chord; mark a view out of date when its source changes; and run `drawing.update` on the file worker, as `Kind::ExportDxf` does, never on the window thread (wasm runs it serially). `crate::drawing_view::drawn` is what it caches. Then `drawing.sheet.set`, and Phase 3 ([§8.2](#82-phases-26-full-task-lists)). **The gate: settled** (2026-10-29) — doc, io, geom and engine one crate at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 RAYON_NUM_THREADS=2` and `nice -n 19`, and no workspace-wide build while free disk is under 60 GB ([§5](#5-working-rules-agreed-with-the-owner)). |
 | **Blockers** | None. **One decision open for the owner:** the default projection is **first angle**, which is one line in `crates/doc/src/drawing.rs` if third angle is wanted ([§8.2](#82-phases-26-full-task-lists)). |
 
 ---
@@ -825,9 +825,10 @@ again.
   process), so the engine was gated at two jobs and `nice -n 19` beside it and no further heavy
   build was started. Memory stayed at 76% free throughout, so this was nothing like 2026-10-28.
 
-**State left:** Phase 2 is five of nine items done outright, with two more part-done: Records but
-for the dimension and note lists, and the view commands but for `drawing.sheet.set` and
-`drawing.sheet.paper`. The branch is 0e3074ac plus the Records and view-commands commits; what is
+**State left:** Phase 2's **done-when is met** — the whole chain from a plate to a byte-stable SVG
+with dashed hidden lines runs in one test. Six of its nine items are done outright, with two
+part-done (Records but for the dimension and note lists, the view commands but for
+`drawing.sheet.set`) and **Freshness and Update** left whole. The branch is 0e3074ac plus the Records and view-commands commits; what is
 pushed is whatever `git log --oneline origin/beta/drawings..HEAD` leaves empty. Nothing is running.
 Two decisions are open for the owner: the default projection (first angle now), and whether the
 inherited 33-string catalog gap is fixed here or left to upstream.
@@ -872,6 +873,21 @@ say "approximate (mesh)".
 **Phase 2: headless drawing core (about 2 weeks).**
 
 **Done when:** a script creates a drawing from a plate, adds the standard views and exports it, and the SVG is correct: front, top, right and iso views inside a bordered sheet, with dashed hidden lines. Two runs give identical bytes.
+
+**Met on 2026-10-29 except for one half of the last sentence**, which is worth stating exactly.
+`a_script_draws_a_plate_and_exports_a_sheet_with_dashed_hidden_lines` makes a drawing of a plate,
+lays out the standard views, asks each for hidden lines, exports the sheet, and asserts an A3
+document whose dashed stroke is `stroke-width="0.25" stroke-dasharray="3 0.75"` — ISO 128-2's
+hidden line, half the visible one, dashed 12d and gapped 3d. So the picture is correct.
+
+**"Two runs give identical bytes" holds for one drawing exported twice, and not for two drawings
+of the same part.** Measured, not assumed, by
+`two_drawings_of_one_part_draw_the_same_marks_in_their_own_order`: the **marks are identical**, but
+two drawings differ in their object ids (the writer puts each group's id in the document as
+`<g data-object="…">`, and ids come from entropy) **and in the order of their view groups**, because
+a sheet keeps its views sorted by id and the ids are random. The second of those is the one worth a
+decision — see the export note in this section. What the phase still owes is **Freshness and
+Update** and `drawing.sheet.set`, and the dimension and note records that moved to Phase 3.
 
 - [x] **Drawing session ("K4-lite").** **Nothing to port: it is already in the branch** (checked
   2026-10-29, machine B). #3891 came in under #5867, which is stacked on it (**09c3052f**), and
@@ -948,7 +964,76 @@ say "approximate (mesh)".
   - Cache view lines keyed by the view record, the source's document id and revision (or file fingerprint), the build and the chord.
   - A changed source marks views out of date.
   - `drawing.update` recomputes on the file worker, like `Kind::ExportDxf`. Never on the window thread; wasm runs it serially.
-- [ ] **SVG export.** `drawing.export {format: "svg", path, sheet?}` through the existing paper SVG writer.
+- [x] **SVG export.** `drawing.export {format: "svg", path, sheet?}` through the existing paper SVG
+  writer — done 2026-10-29 (machine B). It draws the marks `drawing.sheet.paper` gives, writes
+  through io's atomic path, and **never onto a file that is already there** without
+  `overwrite: true`: `safe_write::create_atomic` refuses one even if another writer makes it while
+  the call runs, so there is no window between looking and writing. `dxf`, `pdf` and `png` are
+  refused by name, not as unknown words.
+
+**`drawing.export` — the SVG on disk, and the phase's done-when met: machine B, 2026-10-29.**
+
+`drawing.export {format: "svg", path, sheet?, overwrite?}` draws the marks `drawing.sheet.paper`
+gives and writes them through io. Both commands go through one `marks()`, so the file is the scene
+and there is no second path to drift.
+
+**The "never overwrite" rule is io's, not a check of mine.** `safe_write::create_atomic` publishes
+a new file and refuses an existing destination *even if another writer creates it while the call
+runs* — so the rule the plan asks for ("never overwrite an existing file without an explicit flag")
+is enforced without a look-then-write window. With `overwrite: true` it goes through
+`write_atomic` instead. The path is judged, and `vfs::check` run, **before** anything is drawn: a
+call that cannot be written shouldn't pay for four views' hidden lines first.
+
+**A format that isn't there is named, not called unknown.** `dxf`, `pdf` and `png` come back as
+"not supported yet: … comes with the drawing's other exports", which is Phase 4's item; anything
+else is "`format` is \"svg\"". The contract and the handler share the wording, as the strict-mode
+cases assert.
+
+**The phase's done-when, measured rather than claimed.**
+`a_script_draws_a_plate_and_exports_a_sheet_with_dashed_hidden_lines` makes the drawing, lays out
+the standard views, asks each for hidden lines, exports, and reads the dashed stroke off the
+document: `stroke-width="0.25" stroke-dasharray="3 0.75"`, which is ISO 128-2's hidden line (half
+the visible one, dashed 12d, gapped 3d). An earlier version of that assertion looked for the text
+"0.25" anywhere in the file, which any coordinate ending in .25 satisfies — it proved nothing, and
+now it reads the real attributes.
+
+**Finding: "two runs give identical bytes" is true of one drawing and false of two.**
+`two_drawings_of_one_part_draw_the_same_marks_in_their_own_order` builds the same script in two
+sessions and compares the files. The **marks are identical**. The documents are not, for two
+reasons, and only the first is obvious:
+1. the writer puts each group's object id in the document (`<g data-object="…">`) and a drawing's
+   ids come from entropy; and
+2. **a sheet's views are painted in the order the record keeps them, which is by id** — the rule
+   this morning's Records change took from the module's "later records by id" — so with random ids
+   the *group order* is random too.
+
+The second one is a question for the owner rather than a bug to fix quietly. Paint order decides
+what covers what where two views overlap, and "by id" means that is arbitrary. The fix is a sheet
+that keeps its views in an order of its own (a `views` list that means z-order, or an `order` field)
+— a format change, which Phase 3's annotations will want anyway, since a note or dimension over a
+view must be painted after it. Until then: overlapping views are not orderable, and an exported
+file churns between drawings of the same part even though the drawing is the same.
+
+**One thing the done-when's wording hides:** hidden lines are a *style*, and the default is visible
+lines only, so the script asks for them view by view. Whether `drawing.view.standard` should ask
+for them itself is a default worth the owner's opinion; nothing is lost either way, since
+`drawing.view.set` turns them on in one call.
+
+**Still not drawn: text.** The 2026-10-28 paper scene note said to say so when the SVG landed, so:
+the exported sheet has **no text at all** — the title block's cells are ruled but empty, the grid
+has no letters or numbers, and there is no projection symbol. The geometry for all of it is in
+hand; what is missing is glyph outlines (D3), which is Phase 3's first item. A first look at one of
+these files should read as unfinished, not as wrong.
+
+**A limitation of the write path worth knowing:** `safe_write::create_atomic` publishes the new
+file by hard-linking it into place, so on a filesystem without hard links (exFAT and FAT sticks,
+some SMB shares) an export fails with an opaque io error **even where no file exists**, and nothing
+tells the caller that `overwrite: true` would get past it (that path uses `write_atomic`). Mapping
+that error to a message naming the flag is a small kindness for later.
+
+**Verified:** `cargo fmt --all --check` clean, `cargo xtask lists` ok, `cargo clippy -p
+solidcraft-engine --all-targets` silent, and **58 engine tests matching `drawing`** pass (`--lib`),
+three of them new. `cargo xtask ci` not run: free disk 29 GB against §5's 60.
 
 **`drawing.sheet.paper` — the sheet's marks, done on machine B, 2026-10-29.**
 
@@ -982,7 +1067,8 @@ produce such a sheet.
 the command's scene through `Scene::prepare` into io's `paper_svg` and asserts an SVG document with
 at least seven paths and the A3 size in it, then does it again and compares bytes. That is the
 phase's done-when — "the SVG is correct ... two runs give identical bytes" — bar `drawing.export`,
-which is now only the file writing.
+which was then only the file writing, and which the note above this one records as done the same
+day.
 
 **A measured correction to an assumption worth keeping:** a plain box seen **square on has no
 hidden lines at all** — its back edges project exactly onto its front ones, so nothing is behind
@@ -1135,7 +1221,8 @@ test stops at the first catalog it finds wanting, which is why only Arabic was n
 This change does not add to it.
 
 **What came next, the same day:** `drawing.view.standard` (the note above it). Left after that:
-`drawing.sheet.paper`, `drawing.sheet.set`, Freshness and Update, and the SVG export.
+`drawing.sheet.paper` and the SVG export, which met the phase's done-when, then
+`drawing.sheet.set` and Freshness and Update.
 
 **Verified**, one crate at a time at two jobs, while the owner's own Fusion render had about ten
 cores of the machine (load 139, memory 76% free, so nothing like the 2026-10-28 conditions):
