@@ -7,11 +7,13 @@
 use std::borrow::Cow;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
-use solidcraft_doc::drawing_view::{TangentEdges, ViewDirection, ViewSettings};
+use solidcraft_doc::drawing_view::{TangentEdges, ViewDirection, ViewSettings, ViewStyle};
+use solidcraft_doc::ids;
 use solidcraft_geom::drawing_sheet::{Orientation, PaperSize, SheetSize};
-use solidcraft_geom::drawing_view::{NamedView, Scale};
+use solidcraft_geom::drawing_view::{NamedView, ProjectedSide, Scale};
 use solidcraft_render::VisualStyle;
 
 use super::Point2;
@@ -253,6 +255,253 @@ pub struct SnapshotResult {
     /// The view's box on the sheet: `position_mm` at its centre, the extents at the scale.
     pub boundary_mm: BoxResult,
     pub source: SourceResult,
+    /// In the warn parameter-check mode: what the call's parameters got wrong.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub param_warnings: Vec<String>,
+}
+
+/// A sheet's id, as `drawing.inspect` gives it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(transparent)]
+#[schemars(description = "A sheet's id, as drawing.inspect gives it.")]
+pub struct SheetId(pub String);
+
+impl<'de> Deserialize<'de> for SheetId {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match Value::deserialize(d)? {
+            Value::String(s) if ids::decode(&s).is_some() => Ok(SheetId(s)),
+            _ => Err(D::Error::custom("must be a sheet's id (drawing.inspect)")),
+        }
+    }
+}
+
+/// A view's id, as `drawing.inspect` gives it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(transparent)]
+#[schemars(description = "A view's id, as drawing.inspect gives it.")]
+pub struct ViewId(pub String);
+
+impl<'de> Deserialize<'de> for ViewId {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match Value::deserialize(d)? {
+            Value::String(s) if ids::decode(&s).is_some() => Ok(ViewId(s)),
+            _ => Err(D::Error::custom("must be a view's id (drawing.inspect)")),
+        }
+    }
+}
+
+/// Which side of its base view a projected view sits on.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(transparent)]
+pub struct SideParam(pub ProjectedSide);
+
+impl JsonSchema for SideParam {
+    fn schema_name() -> Cow<'static, str> {
+        "ProjectedSide".into()
+    }
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "description": "Which side of the base view it sits on: left, right, above or below. In third angle a view shows the side of the model it sits on, in first angle the side away from it (ISO 5456-2), so the drawing's projection decides which way it looks.",
+            "type": "string",
+            "enum": ["left", "right", "above", "below"]
+        })
+    }
+}
+
+/// What a saved view draws differently from what it follows. A field left out is left as it is;
+/// `drawing.view.set`'s `clear` gives one back to what it follows.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct ViewStyleParams {
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "ScaleParam")]
+    pub scale: Option<ScaleParam>,
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "StyleParam")]
+    pub display_style: Option<StyleParam>,
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "StyleParam")]
+    pub reference_style: Option<StyleParam>,
+    /// Whether reference parts hide the model's lines behind them.
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "bool")]
+    pub reference_hides_model: Option<bool>,
+    /// Model millimetres added on every side of the view's extents, so reference parts around the
+    /// model show inside its boundary: 0 to 100000.
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "f64")]
+    pub reference_margin_mm: Option<f64>,
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "TangentEdgesParam")]
+    pub tangent_edges: Option<TangentEdgesParam>,
+}
+
+impl ViewStyleParams {
+    /// These fields over `style`, the view's style now: what the call gives, else what it had.
+    pub fn over(&self, style: ViewStyle) -> ViewStyle {
+        ViewStyle {
+            scale: self.scale.map(|s| s.0).or(style.scale),
+            display_style: self.display_style.map(|s| s.0).or(style.display_style),
+            reference_style: self.reference_style.map(|s| s.0).or(style.reference_style),
+            reference_hides_model: self.reference_hides_model.or(style.reference_hides_model),
+            reference_margin_mm: self.reference_margin_mm.or(style.reference_margin_mm),
+            tangent_edges: self.tangent_edges.map(|t| t.0).or(style.tangent_edges),
+        }
+    }
+}
+
+/// A style field a view gives back to what it follows (`drawing.view.set`'s `clear`).
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewStyleField {
+    Scale,
+    DisplayStyle,
+    ReferenceStyle,
+    ReferenceHidesModel,
+    ReferenceMarginMm,
+    TangentEdges,
+}
+
+/// Add a base view — one that looks where it says — to a sheet of the open drawing. One undo step
+/// of the drawing; nothing is evaluated, because a view's lines are worked out when it is drawn.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct BaseParams {
+    /// The sheet to draw it on. A drawing with one sheet may leave it out.
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "SheetId")]
+    pub sheet: Option<SheetId>,
+    pub view: ViewParam,
+    /// The component of the drawing's design it draws, as the design writes it (0, the design
+    /// itself, when not given).
+    pub component: u64,
+    /// Where the view's centre goes, in paper millimetres from the sheet's lower-left corner (the
+    /// centre of the sheet's drawing border when not given).
+    #[serde(deserialize_with = "super::present")]
+    #[schemars(with = "Point2")]
+    pub position_mm: Option<Point2>,
+    pub style: ViewStyleParams,
+}
+
+/// Add a view projected from a base view of the same sheet: a quarter turn from it, lined up with
+/// it, drawing the same component. One undo step of the drawing.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct ProjectedParams {
+    /// The base view it is projected from.
+    pub from: ViewId,
+    pub side: SideParam,
+    /// How far from that view's centre, in paper millimetres along `side`: a projected view keeps
+    /// the other coordinate of the view it comes from, so it stays lined up with it.
+    /// `drawing.view.standard` works the spacing out from the model instead.
+    pub offset_mm: f64,
+    #[serde(default)]
+    pub style: ViewStyleParams,
+}
+
+/// Change a saved view: move it, scale it, or draw it differently. Keys not given stay as they
+/// are. One undo step of the drawing.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct ViewSetParams {
+    pub view: ViewId,
+    /// Where a base view's centre goes, in paper millimetres from the sheet's lower-left corner.
+    /// Its projections move with it. A projected view takes `offset_mm` instead.
+    #[serde(default, deserialize_with = "super::present")]
+    #[schemars(with = "Point2")]
+    pub position_mm: Option<Point2>,
+    /// How far a projected view sits from the view it comes from, in paper millimetres along its
+    /// side. A base view takes `position_mm` instead.
+    #[serde(default, deserialize_with = "super::present")]
+    #[schemars(with = "f64")]
+    pub offset_mm: Option<f64>,
+    #[serde(default)]
+    pub style: ViewStyleParams,
+    /// Style fields to give back to what the view follows: the view it is projected from, or the
+    /// drawing's defaults where it follows none. A field given in `style` as well is refused.
+    #[serde(default)]
+    pub clear: Vec<ViewStyleField>,
+}
+
+/// Delete a saved view. A base view takes the views projected from it with it. One undo step of
+/// the drawing.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct ViewDeleteParams {
+    pub view: ViewId,
+}
+
+/// A saved view's style, as the record keeps it: only the fields the view sets itself.
+#[derive(Debug, Default, Serialize, JsonSchema)]
+pub struct ViewStyleResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_hides_model: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_margin_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tangent_edges: Option<String>,
+}
+
+/// Which way a saved view looks: by itself, or projected from a base view of its sheet. Either
+/// way the basis it draws with is given, so a caller needn't work a projection out.
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LooksResult {
+    Base { view: ViewResult },
+    Projected { from: String, side: String, view: ViewResult },
+}
+
+/// A view saved on a sheet, as the drawing keeps it. Nothing measured from the design is here:
+/// its extents and lines come from `drawing.view.snapshot` and the sheet's paper scene.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ViewRecordResult {
+    pub id: String,
+    /// The sheet it is drawn on.
+    pub sheet: String,
+    /// The drawing's design it draws.
+    pub source: String,
+    pub component: u64,
+    /// Its centre on the paper, in millimetres from the sheet's lower-left corner.
+    pub position_mm: [f64; 2],
+    pub looks: LooksResult,
+    #[serde(skip_serializing_if = "ViewStyleResult::is_empty")]
+    pub style: ViewStyleResult,
+}
+
+impl ViewStyleResult {
+    /// Nothing of its own: the view draws just what it follows.
+    pub fn is_empty(&self) -> bool {
+        let fields = [self.scale.is_none(), self.display_style.is_none(), self.reference_style.is_none(), self.tangent_edges.is_none()];
+        fields.iter().all(|set| *set) && self.reference_hides_model.is_none() && self.reference_margin_mm.is_none()
+    }
+}
+
+/// What `drawing.view.base`, `drawing.view.projected` and `drawing.view.set` return: the view as
+/// the drawing now keeps it.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SavedViewResult {
+    pub view: ViewRecordResult,
+    /// In the warn parameter-check mode: what the call's parameters got wrong.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub param_warnings: Vec<String>,
+}
+
+/// What `drawing.view.delete` returns: the view, and the projections that went with it.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ViewDeletedResult {
+    /// The views deleted, by id: the one asked for first.
+    pub deleted: Vec<String>,
     /// In the warn parameter-check mode: what the call's parameters got wrong.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub param_warnings: Vec<String>,

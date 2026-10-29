@@ -12,8 +12,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use solidcraft_doc::ids;
 use solidcraft_doc::metadata::MAX_KEYS;
+use solidcraft_geom::cell::Projection;
 
 use super::check::whole;
+use super::drawing_view::{SheetId, ViewRecordResult};
 use super::present;
 
 /// Add a drawing of this design, with one ISO A3 landscape sheet and the ISO border, and open
@@ -85,6 +87,61 @@ pub struct SetParams {
     #[serde(default, deserialize_with = "units", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String")]
     pub units: Option<String>,
+    /// The projection its views are drawn in: `first` or `third` angle.
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "ProjectionParam")]
+    pub projection: Option<ProjectionParam>,
+}
+
+/// Put a title block on a sheet of the open drawing, or take its block off. One undo step of the
+/// drawing.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct TitleBlockSetParams {
+    /// The sheet, by id (`drawing.inspect`). A drawing with one sheet may leave it out.
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "SheetId")]
+    pub sheet: Option<SheetId>,
+    pub block: BlockParam,
+}
+
+/// Which title block a sheet gets.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockParam {
+    /// SolidCraft's own 180 x 54 mm block, in the corner of the sheet's drawing border.
+    BuiltIn,
+    /// No title block on the sheet.
+    None,
+}
+
+/// The projection a drawing's views are drawn in.
+#[derive(Clone, Copy, Debug)]
+pub struct ProjectionParam(pub Projection);
+
+impl<'de> Deserialize<'de> for ProjectionParam {
+    /// What the handler's `projection` reads, in its words.
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match Value::deserialize(d)? {
+            Value::String(text) if text == "first" => Ok(ProjectionParam(Projection::First)),
+            Value::String(text) if text == "third" => Ok(ProjectionParam(Projection::Third)),
+            _ => Err(D::Error::custom(whole("`projection` is \"first\" or \"third\""))),
+        }
+    }
+}
+
+impl JsonSchema for ProjectionParam {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Projection".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "The projection a drawing's views are drawn in (ISO 5456-2): first angle, where a view sits on the side away from the one it looks from, or third angle, where it sits on the side it looks from.",
+            "type": "string",
+            "enum": ["first", "third"]
+        })
+    }
 }
 
 /// Read the open drawing's properties. Read-only.
@@ -188,6 +245,8 @@ pub struct InspectResult {
     pub units: UnitsResult,
     /// The drawing's content language, a BCP 47 tag.
     pub language: String,
+    /// The projection its views are drawn in: `first` or `third` angle.
+    pub projection: String,
     /// The drawing's properties as saved, other tools' keys too.
     pub properties: Map<String, Value>,
     /// The designs the drawing draws.
@@ -229,6 +288,22 @@ pub struct SheetResult {
     /// The component the sheet documents, which its title block reads, or null.
     pub documents: Option<SheetComponentResult>,
     pub excluded: ExcludedResult,
+    /// The title block drawn in the corner of its drawing border, or null.
+    pub title_block: Option<TitleBlockResult>,
+    /// The views it draws, by id.
+    pub views: Vec<ViewRecordResult>,
+}
+
+/// A sheet's title block as it is saved: a copy of the block it was made from, so a later built-in
+/// never changes it.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TitleBlockResult {
+    /// The block's width and height in mm.
+    pub size_mm: [f64; 2],
+    pub outline_line_mm: f64,
+    pub cell_line_mm: f64,
+    /// Its cells' names, in the order the block keeps them.
+    pub cells: Vec<String>,
 }
 
 /// Which way a sheet lies. Landscape puts the long side across.

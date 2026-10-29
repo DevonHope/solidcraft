@@ -220,3 +220,213 @@ fn showing_tangent_edges_is_refused_while_the_mesh_decides_them() {
     // The default still works, so the refusal is the option's and not the command's.
     snap(&mut s, json!({"scale": "1:1", "tangent_edges": "hide"}));
 }
+
+/// A block with a drawing of it open: what the saved-view commands work on.
+fn drawn() -> Session {
+    let mut s = block();
+    run(&mut s, "drawing.create", json!({}));
+    s
+}
+
+/// A block in a component, with a drawing of it open: what a view of a component needs to exist.
+fn drawn_in_a_component() -> (Session, u64) {
+    let mut s = block();
+    run(&mut s, "component.create", json!({"name": "Plate"}));
+    let component = s.doc.components.first().map(|in_design| in_design.id).expect("the component just made");
+    run(&mut s, "drawing.create", json!({}));
+    (s, component)
+}
+
+/// Why `id` refused `p`.
+fn why(s: &mut Session, id: &str, p: Value) -> String {
+    s.execute(id, &p).err().map(|e| e.to_string()).unwrap_or_else(|| panic!("accepted: {id} {p}"))
+}
+
+/// The view a call saved.
+fn view_of(reply: &Value) -> Value {
+    reply["view"].clone()
+}
+
+/// A view's id, as the next call names it.
+fn id_of(view: &Value) -> String {
+    view["id"].as_str().expect("the view's id").to_string()
+}
+
+/// The drawing area of an A3 landscape sheet with the ISO border, which `drawing.create` makes.
+fn a3_border() -> solidcraft_geom::Aabb2 {
+    let sheet = Sheet::standard(solidcraft_geom::drawing_sheet::PaperSize::A3, solidcraft_geom::drawing_sheet::Orientation::Landscape);
+    DrawingBorderProfile::iso().layout(&sheet).expect("the ISO border on A3").drawing_border
+}
+
+/// A base view is saved in the middle of the sheet's drawing area unless the call says where, it
+/// draws the design the drawing draws, and placing it **evaluates nothing**: what a view draws is
+/// worked out when it is drawn, not when it is placed.
+#[test]
+fn a_base_view_is_saved_where_it_is_put_and_evaluates_nothing() {
+    let mut s = drawn();
+    let (evaluations, steps) = (s.evaluations, s.undo.len());
+    let made = view_of(&run(&mut s, "drawing.view.base", json!({})));
+    assert_eq!(point(&made["position_mm"]), a3_border().center(), "the middle of the drawing area");
+    assert_eq!(made["looks"]["base"]["view"]["named"], json!("front"), "the front view unless the call says");
+    assert_eq!(made["component"], json!(0));
+    assert_eq!(made.get("style"), None, "a view that draws as the drawing does saves no style");
+    assert_eq!(s.evaluations, evaluations, "nothing was evaluated");
+    assert_eq!((s.undo.len(), s.undo.last().and_then(|step| step.part)), (steps + 1, Some(s.open_drawing.expect("a drawing open"))));
+    // It comes back from `drawing.inspect`, on the sheet it was put on, and undo takes it away.
+    let sheets = run(&mut s, "drawing.inspect", json!({}))["sheets"].clone();
+    assert_eq!(sheets[0]["views"], json!([made]));
+    assert_eq!(made["sheet"], sheets[0]["id"]);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(run(&mut s, "drawing.inspect", json!({}))["sheets"][0]["views"], json!([]));
+}
+
+/// Where a call puts a base view, and what it draws differently, are saved as given.
+#[test]
+fn a_base_view_takes_a_place_a_direction_and_a_style() {
+    let (mut s, component) = drawn_in_a_component();
+    let p = json!({"view": "iso", "component": component, "position_mm": [300.0, 200.0], "style": {"scale": "1:2", "tangent_edges": "show"}});
+    let made = view_of(&run(&mut s, "drawing.view.base", p));
+    assert_eq!(point(&made["position_mm"]), Vec2::new(300.0, 200.0));
+    assert_eq!(made["looks"]["base"]["view"]["named"], json!("iso_front_right"), "iso is iso_front_right");
+    assert_eq!((made["component"].clone(), made["style"].clone()), (json!(component), json!({"scale": "1:2", "tangent_edges": "show"})));
+    // What it refuses: a direction with no basis, a sheet it hasn't got, and a component the
+    // design hasn't got — which the record can't check, because it never sees the design.
+    let along = json!({"view": {"direction": [0, 0, 1], "up": [0, 0, 1]}});
+    assert!(why(&mut s, "drawing.view.base", along).contains("up"), "an up along the line of sight");
+    let elsewhere = json!({"sheet": "0000000000001"});
+    assert!(why(&mut s, "drawing.view.base", elsewhere).contains("has no sheet"));
+    let absent = json!({"component": component + 1000});
+    assert!(why(&mut s, "drawing.view.base", absent).contains("has no component"), "a view of nothing is refused");
+}
+
+/// A projected view is a quarter turn from the base view it comes from, lined up with it and
+/// drawing the same component. Which way it looks is the drawing's projection: in first angle the
+/// view above the front looks from below, so it is the bottom view; in third angle it is the top
+/// (ISO 5456-2).
+#[test]
+fn a_projected_view_is_turned_from_its_base_view_and_lined_up_with_it() {
+    let (mut s, component) = drawn_in_a_component();
+    let base = view_of(&run(&mut s, "drawing.view.base", json!({"position_mm": [150.0, 150.0], "component": component})));
+    let from = id_of(&base);
+    let above = view_of(&run(&mut s, "drawing.view.projected", json!({"from": from, "side": "above", "offset_mm": 70})));
+    let projected = above["looks"]["projected"].clone();
+    assert_eq!((projected["from"].clone(), projected["side"].clone()), (json!(from), json!("above")));
+    assert_eq!(projected["view"]["named"], json!("bottom"), "first angle: the view above looks from below");
+    assert_eq!(point(&above["position_mm"]), Vec2::new(150.0, 220.0), "lined up with it, 70 mm above");
+    let shows = (above["source"].clone(), above["component"].clone());
+    assert_eq!(shows, (base["source"].clone(), json!(component)), "it draws what its base view draws");
+    // The same side in third angle is the top view.
+    let mut third = drawn();
+    run(&mut third, "drawing.set", json!({"projection": "third"}));
+    let base = id_of(&view_of(&run(&mut third, "drawing.view.base", json!({}))));
+    let above = view_of(&run(&mut third, "drawing.view.projected", json!({"from": base, "side": "above", "offset_mm": 70})));
+    assert_eq!(above["looks"]["projected"]["view"]["named"], json!("top"));
+    // What it refuses: a projection of a projection, an offset that puts it on its base view, and
+    // a view that isn't there.
+    let on_a_projection = json!({"from": id_of(&above), "side": "left", "offset_mm": 50});
+    assert!(why(&mut third, "drawing.view.projected", on_a_projection).contains("a projection is taken from a base view"));
+    for offset in [0.0, -50.0] {
+        let p = json!({"from": base, "side": "left", "offset_mm": offset});
+        assert!(why(&mut third, "drawing.view.projected", p).contains("above 0"), "{offset} mm");
+    }
+    let nowhere = json!({"from": "0000000000001", "side": "left", "offset_mm": 50});
+    assert!(why(&mut third, "drawing.view.projected", nowhere).contains("has no view"));
+}
+
+/// Moving a base view moves the views projected from it with it, so they stay lined up and keep
+/// their spacing. A projected view itself moves along its own side, by `offset_mm`.
+#[test]
+fn a_base_views_projections_move_with_it() {
+    let mut s = drawn();
+    let base = id_of(&view_of(&run(&mut s, "drawing.view.base", json!({"position_mm": [150.0, 150.0]}))));
+    let above = id_of(&view_of(&run(&mut s, "drawing.view.projected", json!({"from": base, "side": "above", "offset_mm": 70}))));
+    let right = id_of(&view_of(&run(&mut s, "drawing.view.projected", json!({"from": base, "side": "right", "offset_mm": 90}))));
+    let moved = view_of(&run(&mut s, "drawing.view.set", json!({"view": base, "position_mm": [200.0, 120.0]})));
+    assert_eq!(point(&moved["position_mm"]), Vec2::new(200.0, 120.0));
+    let placed = |s: &mut Session, id: &str| point(&view_of(&run(s, "drawing.view.set", json!({"view": id})))["position_mm"]);
+    assert_eq!(placed(&mut s, &above), Vec2::new(200.0, 190.0), "70 mm above it still");
+    assert_eq!(placed(&mut s, &right), Vec2::new(290.0, 120.0), "90 mm to its right still");
+    // A projected view moves by its offset, and keeps the coordinate it shares with its base view.
+    let further = view_of(&run(&mut s, "drawing.view.set", json!({"view": above, "offset_mm": 100})));
+    assert_eq!(point(&further["position_mm"]), Vec2::new(200.0, 220.0));
+    // Each takes the parameter that means something for it.
+    assert!(why(&mut s, "drawing.view.set", json!({"view": base, "offset_mm": 50})).contains("`offset_mm` is for a projected view"));
+    let how = why(&mut s, "drawing.view.set", json!({"view": above, "position_mm": [0.0, 0.0]}));
+    assert!(how.contains("stays lined up"), "{how}");
+}
+
+/// A view's style is changed field by field, and `clear` gives a field back to what the view
+/// follows. Saying both for one field is a mistake, not an order.
+#[test]
+fn a_views_style_is_set_and_cleared_field_by_field() {
+    let mut s = drawn();
+    let view = id_of(&view_of(&run(&mut s, "drawing.view.base", json!({"style": {"scale": "1:2"}}))));
+    let set = json!({"view": view, "style": {"display_style": "visible_hidden", "reference_margin_mm": 5.0}});
+    let styled = view_of(&run(&mut s, "drawing.view.set", set));
+    assert_eq!(styled["style"], json!({"scale": "1:2", "display_style": "visible_hidden", "reference_margin_mm": 5.0}), "kept and added");
+    let cleared = view_of(&run(&mut s, "drawing.view.set", json!({"view": view, "clear": ["scale", "reference_margin_mm"]})));
+    assert_eq!(cleared["style"], json!({"display_style": "visible_hidden"}));
+    let both = json!({"view": view, "style": {"display_style": "visible"}, "clear": ["display_style"]});
+    assert!(why(&mut s, "drawing.view.set", both).contains("given and cleared"));
+    let margin = json!({"view": view, "style": {"reference_margin_mm": -1.0}});
+    assert!(why(&mut s, "drawing.view.set", margin).contains("reference_margin_mm"), "the record's own rule");
+    let all = json!({"view": view, "clear": ["display_style"]});
+    assert_eq!(view_of(&run(&mut s, "drawing.view.set", all)).get("style"), None, "nothing of its own left");
+}
+
+/// Deleting a base view takes the views projected from it with it: a projection draws nothing on
+/// its own, and the drawing would refuse to keep one whose base view is gone.
+#[test]
+fn deleting_a_base_view_takes_its_projections() {
+    let mut s = drawn();
+    let base = id_of(&view_of(&run(&mut s, "drawing.view.base", json!({"position_mm": [150.0, 150.0]}))));
+    let above = id_of(&view_of(&run(&mut s, "drawing.view.projected", json!({"from": base, "side": "above", "offset_mm": 70}))));
+    let other = id_of(&view_of(&run(&mut s, "drawing.view.base", json!({"position_mm": [300.0, 150.0]}))));
+    // A projection goes on its own without touching its base view.
+    assert_eq!(run(&mut s, "drawing.view.delete", json!({"view": above}))["deleted"], json!([above]));
+    let above = id_of(&view_of(&run(&mut s, "drawing.view.projected", json!({"from": base, "side": "above", "offset_mm": 70}))));
+    let deleted = run(&mut s, "drawing.view.delete", json!({"view": base}))["deleted"].clone();
+    assert_eq!(deleted, json!([base, above]), "the base view first, then what went with it");
+    let left = run(&mut s, "drawing.inspect", json!({}))["sheets"][0]["views"].clone();
+    assert_eq!(left.as_array().map(Vec::len), Some(1));
+    assert_eq!(left[0]["id"], json!(other), "the other base view stands");
+    assert!(why(&mut s, "drawing.view.delete", json!({"view": base})).contains("has no view"));
+}
+
+/// The projection is the drawing's, and changing it while projected views stand is refused: the
+/// other angle turns each of them the other way, so it would quietly show other sides.
+#[test]
+fn the_drawings_projection_is_refused_while_projections_stand() {
+    let mut s = drawn();
+    assert_eq!(run(&mut s, "drawing.inspect", json!({}))["projection"], json!("first"), "first angle unless the drawing says");
+    let base = id_of(&view_of(&run(&mut s, "drawing.view.base", json!({}))));
+    assert_eq!(run(&mut s, "drawing.set", json!({"projection": "third"}))["projection"], json!("third"), "base views alone are no bar");
+    run(&mut s, "drawing.view.projected", json!({"from": base, "side": "right", "offset_mm": 80}));
+    let why_not = why(&mut s, "drawing.set", json!({"projection": "first"}));
+    assert!(why_not.contains("projected views") && why_not.contains("drawing.view.delete"), "{why_not}");
+    assert_eq!(run(&mut s, "drawing.set", json!({"projection": "third"}))["projection"], json!("third"), "the angle it already has is no change");
+    assert!(why(&mut s, "drawing.set", json!({"projection": "fourth"})).contains("\"first\" or \"third\""));
+}
+
+/// A sheet takes a copy of the built-in title block, gives it back, and refuses one that would not
+/// fit its drawing border — the record's rule, through the layout that draws it.
+#[test]
+fn a_title_block_is_put_on_a_sheet_and_refused_where_it_cant_be_drawn() {
+    let mut s = drawn();
+    let sheets = run(&mut s, "drawing.title_block.set", json!({"block": "built_in"}))["sheets"].clone();
+    let block = sheets[0]["title_block"].clone();
+    assert_eq!(point(&block["size_mm"]), Vec2::new(180.0, 54.0));
+    let cells = block["cells"].as_array().map(Vec::len);
+    assert_eq!(cells, Some(solidcraft_geom::title_block::TitleBlock::built_in().cells.len()));
+    assert_eq!(run(&mut s, "drawing.inspect", json!({}))["sheets"][0]["title_block"], block, "it is saved, not worked out again");
+    assert_eq!(run(&mut s, "drawing.title_block.set", json!({"block": "none"}))["sheets"][0]["title_block"], json!(null));
+    // A sheet too small for it: the block is 180 x 54 mm, and A5 portrait's drawing area is
+    // narrower. The sheet's paper is set by hand here, since no command changes it yet.
+    let open = s.drawing("test").expect("a drawing open").clone();
+    let mut small = (*open).clone();
+    let a5 = Sheet::standard(solidcraft_geom::drawing_sheet::PaperSize::A5, solidcraft_geom::drawing_sheet::Orientation::Portrait);
+    Arc::make_mut(&mut small.sheets[0]).sheet = a5;
+    s.doc_mut().put_drawing(Arc::new(small));
+    let tight = why(&mut s, "drawing.title_block.set", json!({"block": "built_in"}));
+    assert!(tight.contains("a title block fits inside the drawing border"), "{tight}");
+}

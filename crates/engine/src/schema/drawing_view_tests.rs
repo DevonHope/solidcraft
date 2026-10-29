@@ -1,7 +1,7 @@
 use serde_json::json;
 use solidcraft_doc::drawing_view::ViewSettings;
 
-use super::SnapshotParams;
+use super::{BaseParams, ProjectedParams, SnapshotParams, ViewDeleteParams, ViewSetParams};
 use crate::schema::input_schema_for;
 use crate::schema::tests::{assert_keys, assert_strict_keeps_todays_errors};
 
@@ -19,6 +19,11 @@ fn schemas_and_the_key_check_agree() {
         "view",
     ];
     assert_keys(input_schema_for::<SnapshotParams>(), &keys);
+    // The saved views (W12). A style of its own goes under `style`, as the record keeps it.
+    assert_keys(input_schema_for::<BaseParams>(), &["component", "position_mm", "sheet", "style", "view"]);
+    assert_keys(input_schema_for::<ProjectedParams>(), &["from", "offset_mm", "side", "style"]);
+    assert_keys(input_schema_for::<ViewSetParams>(), &["clear", "offset_mm", "position_mm", "style", "view"]);
+    assert_keys(input_schema_for::<ViewDeleteParams>(), &["view"]);
 }
 
 /// The contract takes the view's settings field for field, plus the sheet and the position, so

@@ -46,6 +46,21 @@ An appearance sets colour and surface finish only. It has no effect on mass or s
 - **Elsewhere:** appearance, visual material, colour.
 - **For translators:** not the physical material.
 
+### base view
+
+A view on a drawing sheet that looks at the model along a direction given for it, rather than one
+derived from another view.
+
+Every other view of a sheet is placed relative to a base view: a *projected view* is turned a
+quarter turn from one. A base view carries its own direction, and its own scale and style unless it
+takes the drawing's.
+
+- **In SolidCraft:** `drawing.view.base`; the `looks: {base: {view}}` key of a saved view.
+- **Don't use:** parent view, model view, primary view, source view.
+- **Elsewhere:** base view, model view, parent view.
+- **For translators:** not the front view — a base view may look any way — and not the base of a
+  feature or of a sheet-metal flange.
+
 ### bill of materials
 
 The list of the components placed in a design or in one component, with the quantity of each.
@@ -295,6 +310,35 @@ The first instance is the original.
 - **Elsewhere:** instance, element, occurrence.
 - **For translators:** not an occurrence of a component.
 
+### projected view
+
+A view on a drawing sheet whose direction is a quarter turn from a base view of the same sheet,
+about the edge they share.
+
+Which side of that view it is placed on, and so which way it looks, follows the drawing's
+*projection*. It stays lined up with the view it comes from and draws the same component, so the
+two read as one set of views.
+
+- **In SolidCraft:** `drawing.view.projected`; the `looks: {projected: {from, side}}` key of a saved
+  view.
+- **Don't use:** child view, derived view, orthographic view, auxiliary view (which looks along a
+  direction that is not one of the model's principal ones).
+- **Elsewhere:** projected view, orthographic view, child view.
+- **For translators:** not projecting model geometry into a sketch (`sketch.project`).
+
+### projection, first angle, third angle
+
+The convention that decides which side of a base view each view projected from it is placed on.
+
+In **first angle** a view is placed on the side away from the one it looks from; in **third angle**
+on the side it looks from (ISO 5456-2). The choice is one for a whole drawing, and a title block
+states it so a reader knows which they are looking at.
+
+- **In SolidCraft:** `drawing.set {projection}`; the `projection` key of a drawing.
+- **Don't use:** European projection, American projection, angle of projection.
+- **Elsewhere:** first-angle and third-angle projection, European and American projection.
+- **For translators:** not projecting geometry into a sketch, and not a perspective projection.
+
 ### reference edge
 
 A straight edge of a flat face that a Single hole's centre or a cylinder's base centre keeps a
@@ -365,6 +409,20 @@ The ordered list of a design's features, which SolidCraft computes from first to
 - **Don't use:** feature history, history (for the timeline).
 - **Elsewhere:** timeline, history, feature tree.
 - **For translators:** not the undo history.
+
+### title block
+
+A ruled box in the corner of a drawing sheet whose cells state what the drawing is: its name and
+number, the scale, the units, the date and who is answerable for it.
+
+A sheet keeps a copy of the block it was made with, so a later change to a built-in block never
+changes a drawing already saved. Its cells take their values from the drawing's properties and from
+the component the sheet documents.
+
+- **In SolidCraft:** `drawing.title_block.set`; the `title_block` key of a sheet.
+- **Don't use:** title bar, name block, stamp, cartouche.
+- **Elsewhere:** title block, drawing stamp.
+- **For translators:** not a window's title bar.
 
 ### web browser
 

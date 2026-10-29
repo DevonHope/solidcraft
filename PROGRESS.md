@@ -19,13 +19,13 @@ Times in the log are local time on the machine that did the work, with the UTC o
 | | |
 |---|---|
 | **Last updated** | 2026-10-29, morning, on the Mac (machine B, see [Machines](#machines)) |
-| **Branch** | `beta/drawings`: this session's **Records** commit on top of **0e3074ac**, and on the fork (`git log -1` for its SHA: naming it here is what went stale twice). **43ee8f7d** was the last Phase 2 feature commit before it. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
+| **Branch** | `beta/drawings`: 2026-10-29's **Records** and **view commands** commits on top of **0e3074ac**. Their SHAs are deliberately not written here — naming one went stale twice; `git log --oneline -3` has them, and `git log --oneline origin/beta/drawings..HEAD` says which are not on the fork yet. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
-| **Pushed?** | **Yes, everything**, to the fork as `origin/beta/drawings`, each push with the owner's explicit OK — the Records commit of 2026-10-29 included. Another machine gets the lot with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
-| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Five of its nine items are done — exact view basis, view lines, standard layout, the paper scene builder, and the drawing session, which **needed no code** because #3891 is already in the branch — and **Records** is done but for the `dimensions` and `notes` lists, which moved to Phase 3 ([§8.2](#82-phases-26-full-task-lists)). Left: the **view commands**, **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
+| **Pushed?** | The fork's branch is `origin/beta/drawings`, and **`git log --oneline origin/beta/drawings..HEAD` is the only honest answer** to what is still local — this row has gone stale twice by trying to say it in words. Every push so far went up with the owner's explicit OK. Another machine gets what is there with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
+| **Phase** | **Phase 2 of 6 (headless drawing core): in progress.** Five of its nine items are done — exact view basis, view lines, standard layout, the paper scene builder, and the drawing session, which **needed no code** because #3891 is already in the branch. **Records** is done but for the `dimensions` and `notes` lists (moved to Phase 3), and the **view commands** but for `drawing.view.standard`, `drawing.sheet.set` and `drawing.sheet.paper` ([§8.2](#82-phases-26-full-task-lists)). Left whole: **Freshness and Update**, and the **SVG export** the phase's done-when is measured against. |
 | **Running** | Nothing. |
 | **Last measured** | The chamfer case in [§8.6](#86-known-problems-and-fixes), 2026-10-28 on the Mac: the kernel's cost, and a test proving OK reuses the preview's evaluation. The report and its scripts are written and **not posted**. |
-| **Next action** | Phase 2's **view commands** (`drawing.view.base`, `.projected`, `.standard`, `.set`, `drawing.delete`, `drawing.sheet.set`, `drawing.title_block.set`, `drawing.sheet.paper`), which write the records this session added; `drawing.inspect` and `drawing.set` owe views, the title block and the projection as well ([§8.2](#82-phases-26-full-task-lists)). **The gate question is settled** (2026-10-29): gate doc, io and engine one crate at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 RAYON_NUM_THREADS=2` and `nice -n 19`, and run no workspace-wide build while free disk is under 60 GB ([§5](#5-working-rules-agreed-with-the-owner)). |
+| **Next action** | **`drawing.view.standard`**, the four-view layout: it composes `standard_layout` with the records the view commands now write, and it is the **first drawing command that reads the model** (it needs the extents on four planes), so it is not `doc_only()` and its test goes through `execute`. Then `drawing.sheet.set` and `drawing.sheet.paper`, Freshness and Update, and the SVG export ([§8.2](#82-phases-26-full-task-lists)). **The gate: settled** (2026-10-29) — doc, io and engine one crate at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 RAYON_NUM_THREADS=2` and `nice -n 19`, and no workspace-wide build while free disk is under 60 GB ([§5](#5-working-rules-agreed-with-the-owner)). |
 | **Blockers** | None. **One decision open for the owner:** the default projection is **first angle**, which is one line in `crates/doc/src/drawing.rs` if third angle is wanted ([§8.2](#82-phases-26-full-task-lists)). |
 
 ---
@@ -812,10 +812,21 @@ again.
   which threw away the first two results. The pipe hides what you came for — and in zsh it hides
   the exit code as well (§5). Both were run again on their own.
 
-**State left:** Phase 2 is five of nine items done, with Records done but for the dimension and
-note lists. The branch is 0e3074ac plus this session's Records commit, **pushed to the fork** with
-the owner's OK. Nothing is running. Next is the view commands; one decision is open for the owner (the default
-projection).
+- **Then the view commands**, the item after Records: the five that edit the record, their schemas,
+  their labels in eight locales, and the glossary terms the new ideas owed (base view, projected
+  view, projection, title block — that page's own rule asks a change which adds an idea to add its
+  term). The note in §8.2 records the id collision the plan had missed and the five decisions.
+  `drawing.view.standard` is left, and it will be the first drawing command that reads the model.
+- **The owner's Fusion render had the machine** from about 10:30 (load 139, ten cores on one
+  process), so the engine was gated at two jobs and `nice -n 19` beside it and no further heavy
+  build was started. Memory stayed at 76% free throughout, so this was nothing like 2026-10-28.
+
+**State left:** Phase 2 is five of nine items done; Records is done but for the dimension and note
+lists, and the view commands but for `drawing.view.standard`, `drawing.sheet.set` and
+`drawing.sheet.paper`. The branch is 0e3074ac plus the Records and view-commands commits; what is
+pushed is whatever `git log --oneline origin/beta/drawings..HEAD` leaves empty. Nothing is running.
+Two decisions are open for the owner: the default projection (first angle now), and whether the
+inherited 33-string catalog gap is fixed here or left to upstream.
 
 ---
 
@@ -910,19 +921,134 @@ say "approximate (mesh)".
   - Add `ObjectKind::View`, `Dimension` and `Note`.
   - One group per view: visible strokes 0.5 mm, hidden strokes 0.25 mm dashed (#7430).
   - Mind the 100k-record cap per scene: simplify to paper tolerance.
-- [ ] **View commands:**
-  - `drawing.view.base` and `drawing.view.projected` (the names #5349 reserves);
-  - `drawing.view.standard`;
-  - `drawing.view.set` (move, scale, hidden-line style);
-  - `drawing.delete` (a view takes its dimensions with it);
-  - `drawing.sheet.set` and `drawing.title_block.set`;
-  - `drawing.sheet.paper` (read-only scene JSON).
+- [~] **View commands.** **The five that edit the record are done (2026-10-29, machine B);** the
+  note below records what they decide. `drawing.view.standard`, `drawing.sheet.set` and
+  `drawing.sheet.paper` are left.
+  - [x] `drawing.view.base` and `drawing.view.projected` (the names #5349 reserves, checked against
+    its branch);
+  - [ ] `drawing.view.standard`;
+  - [x] `drawing.view.set` (move, scale, style, and `clear` to give a field back);
+  - [x] ~~`drawing.delete`~~ **`drawing.view.delete`**: `drawing.delete` already deletes a
+    *drawing* (#3890), so the plan's id was taken. A base view takes the views projected from it
+    with it; dimensions will join that cascade when they exist (Phase 3).
+  - [ ] `drawing.sheet.set`; [x] `drawing.title_block.set` (the built-in block, or none).
+  - [ ] `drawing.sheet.paper` (read-only scene JSON).
+  - [x] `drawing.inspect` reports each sheet's views and title block and the drawing's projection,
+    and `drawing.set` takes `projection`: the records of 2026-10-29 were saved but unreadable
+    before this.
   - Stay under `drawing.`: `sheet.*` belongs to sheet metal and `view.*` to the camera.
 - [ ] **Freshness and Update.**
   - Cache view lines keyed by the view record, the source's document id and revision (or file fingerprint), the build and the chord.
   - A changed source marks views out of date.
   - `drawing.update` recomputes on the file worker, like `Kind::ExportDxf`. Never on the window thread; wasm runs it serially.
 - [ ] **SVG export.** `drawing.export {format: "svg", path, sheet?}` through the existing paper SVG writer.
+
+**View commands — the five that edit the record: done on machine B, 2026-10-29.**
+
+`drawing.view.base`, `drawing.view.projected`, `drawing.view.set` and `drawing.view.delete` sit in
+`engine/src/cmd/drawing_view.rs` beside the snapshot, `drawing.title_block.set` in
+`engine/src/cmd/drawing.rs`, each with a contract and an output schema. They write the records this
+morning's change added and **evaluate nothing**: what a view draws is worked out when it is drawn,
+so placing one is a document edit and one undo step of the drawing. That keeps the promise the
+drawing module already makes, and
+`a_base_view_is_saved_where_it_is_put_and_evaluates_nothing` holds it down by counting
+`Session::evaluations`.
+
+**The plan's id was already taken.** It asked for `drawing.delete` to delete a view, but that id
+deletes a *drawing* (#3890, in the branch since 09c3052f). The command is **`drawing.view.delete`**,
+which also matches #5349's `drawing.view.*` family. Checked against that branch while choosing the
+names: it reserves `view.base`, `view.projected`, `view.detail`, `view.section` and `views.align`,
+and nothing for setting, deleting or a title block, so those three follow this project's own
+`<area>.<thing>.set` convention.
+
+**A projected view moves by one number, not two.** Its record keeps a full `position_mm`, but one
+coordinate is the one it shares with the view it comes from — `ViewFrame::aligned` derives that
+axis from the parent — so a command taking `[x, y]` would have a number in it that means nothing,
+and a user moving a view sideways would see nothing happen. So `drawing.view.projected` and
+`drawing.view.set` take **`offset_mm`**, the distance along the view's own side, and the engine
+writes the shared coordinate from the parent. Each command refuses the other's parameter rather
+than ignoring it, the way the snapshot refuses `tangent_edges: show`.
+
+**Moving a base view moves its projections with it**, by the same delta, so they stay lined up and
+keep their spacing — what dragging a parent view does in any CAD. Without it the children would be
+left behind and their shared coordinate would be stale.
+
+**The component a view draws is the command's to check, not the record's.** `View.component` is an
+id in the design the view draws, and `Drawing::validate` never sees a design — it validates a
+record on its own — so nothing in `doc` can tell a real component from a number. The first draft of
+`drawing.view.base` therefore saved a view of component 7 of a design that has no components, which
+a test had locked in. The handler now refuses an id the design hasn't got, which is what the
+commands skill asks of a reference ("validate inputs first ... rather than building a broken
+feature"), and the test makes a real component and asserts the refusal for one that isn't there.
+When a drawing can draw other designs, this check moves to the view's own source.
+
+**`clear` gives a style field back to what the view follows.** The record's style is per-field
+optional (None = follow the parent, or the drawing's default), and `present` refuses a null, so
+there was no way to spell "stop overriding this". `drawing.view.set {clear: ["scale", …]}` is that
+spelling, one mechanism for all six fields, and a field both given and cleared in one call is
+refused as the contradiction it is.
+
+**Changing the drawing's projection is refused while projected views stand.** First and third angle
+put a view on opposite sides of its parent, so switching the angle would leave every projection
+showing a different side of the model where it stands. `drawing.set {projection}` refuses it and
+names the way out (delete them, or set the angle before adding them) rather than silently redrawing
+them. Setting the angle it already has is not a change, and base views alone are no bar.
+
+**The first-angle default, seen end to end.** `a_projected_view_is_turned_from_its_base_view_and_lined_up_with_it`
+asserts that the view placed **above** the front comes back named `bottom` in first angle and `top`
+in third. That is ISO 5456-2 through `projected_basis`, the record and the reply — the chain the SVG
+export will draw — and it is the first test anywhere in this work to tie the default projection to
+what a user would see.
+
+**The labels needed eight locales, not two.** Every registered command needs `cmd.<id>` in the
+English catalog (`every_command_label_is_in_the_english_catalog`), and every catalog in `COMPLETE`
+must carry every English id. `skills/solidcraft-ui-text/SKILL.md` says that list is "en, ja, zh, de
+and ko"; `crates/ui-egui/src/i18n.rs:449` says `COMPLETE` is **ar, he, ja, vi and zh**. The skill is
+out of date — worth a one-line fix there, and worth knowing before a label lands. The five new
+labels are in `assets/locales/pending/drawing-view-commands.json` in all eight: the five complete
+ones, plus de and ko as the skill asks. House terms were followed where they exist (ja 図面/ビュー,
+zh 绘图/视图, ko 보기, de Ansicht) and the standards' words for a title block (JIS 表題欄, DIN
+Schriftfeld, TCVN khung tên, 标题栏, 표제란). **The Hebrew and Vietnamese wordings are the ones to
+have a native speaker check.**
+
+**And the inherited catalog failure is three catalogs, not one** ([§8.6](#86-known-problems-and-fixes)
+now says so): `ar`, `he` and `vi` are each missing the same 11 upstream `cmd.drawing_*` ids. The
+test stops at the first catalog it finds wanting, which is why only Arabic was named on 2026-10-28.
+This change does not add to it.
+
+**Left for the next session:** `drawing.view.standard` (the four-view layout, which reads the model
+for its extents, so it is the first drawing command that evaluates), `drawing.sheet.set` and
+`drawing.sheet.paper`, then Freshness and Update and the SVG export.
+
+**Verified**, one crate at a time at two jobs, while the owner's own Fusion render had about ten
+cores of the machine (load 139, memory 76% free, so nothing like the 2026-10-28 conditions):
+
+- `cargo fmt --all --check` clean; `cargo clippy -p solidcraft-engine --all-targets` silent;
+  `cargo xtask lists` ok — "pending locale and attribution files fold cleanly", which is the check
+  that the new locale file is well formed and its ids are nowhere else.
+- **48 engine tests matching `drawing` pass** (`--lib`): the seven new ones, the schema key checks
+  for all four new contracts and `TitleBlockSetParams`, and **14 new strict-mode cases** that hold
+  the contract and the handler to the same message for the same mistake.
+- `hostile_drawing_params_never_panic` now sends every hostile value at the **11 new parameter
+  names** as well (`sheet`, `view`, `from`, `side`, `offset_mm`, `position_mm`, `component`,
+  `style`, `clear`, `block`, `projection`), and still finds no panic and no drawing that breaks its
+  rules. That test iterates the registry, so it covered the new commands from the first run.
+- The two **ui-egui label tests were not run** — that crate's test binary is the heaviest link in
+  the repository and the machine was busy. What they check was verified against the catalog files
+  themselves instead: all five ids are in `en` with the labels the specs carry, and in all five
+  `COMPLETE` catalogs; no id is in a catalog and a pending file at once. `cargo xtask i18n` reports
+  only the known gaps in the partial catalogs.
+- **`cargo xtask ci` was not run.** Free disk was 35-37 GB, under §5's 60 GB line.
+- **The engine-wide `hostile_params_never_panic` was not run either**, deliberately: §5 records
+  that it starts one thread per core whatever `RUST_TEST_THREADS` says and takes about ten minutes,
+  and the owner's render already had about ten cores. Its drawing-shaped sibling,
+  `hostile_drawing_params_never_panic`, did run, and it covers every command that works with a
+  drawing open — all five of these. The engine-wide one is owed on a quiet machine.
+- The new ideas' **glossary terms** are in `docs/book/src/reference/glossary.md` (base view,
+  projected view, projection with first and third angle, title block), which that page's own rule
+  requires of a change that adds an idea. Nothing in the drawings work had added one before, so
+  "drawing", "drawing sheet" and "drawing view" are still missing: they are upstream's ideas
+  (#3890) rather than this branch's, but someone should add them.
 
 **Records — views, the title block and the projection: done on machine B, 2026-10-29.**
 
@@ -1018,12 +1144,11 @@ Six mutations of the new rules, all caught:
 | an empty style is written out | the byte-for-byte assert, and the view record's own JSON |
 | a view's position need only be finite | 5000.1 mm reads — and `mutated_files_give_an_error_or_a_valid_drawing_never_a_panic` fails too, so the drawing fuzz test guards the bound as well |
 
-**Owed by the next item (view commands).** Nothing writes a view yet, and `drawing.inspect` still
-reports a sheet as `{id, name, size_mm, orientation, dpi, documents, excluded}`, so views, the
-title block and the projection are saved but not reported. Both belong with
-`drawing.view.base`/`drawing.view.projected`/`drawing.view.standard`, and `drawing.set` should take
-`projection` there too. The record is deliberately ahead of the commands: the commands can now be
-written against a shape that is already tested.
+**What this left owing, and the same day's commands paid.** When this landed, nothing wrote a view
+and `drawing.inspect` reported a sheet as `{id, name, size_mm, orientation, dpi, documents,
+excluded}`, so the new records were saved but unreadable. The view commands below added the five
+writers and taught `drawing.inspect` and `drawing.set` the new fields. The record went first on
+purpose: the commands were then written against a shape that was already tested.
 
 **Verified**, one crate at a time at two jobs, because the full gate rebooted this Mac on
 2026-10-28 ([§5](#5-working-rules-agreed-with-the-owner)):
@@ -1424,7 +1549,7 @@ with the owner's explicit OK. Each claim was verified by reading the merged code
 | An auto-merge silently drops `main` code. | Review the auto-merged hunks in each conflicted file, not only the conflict markers. |
 | The web offline test is skipped. | Chrome isn't installed on the laptop. |
 | **3 engine tests fail on macOS** (machine B) at b0f2a86e: `prism_local_tests::a_ring_cut_round_a_counterbored_hole_in_a_chamfered_disc`, and `robustness_goldens` seeds **36** and **71**. | **Platform divergence in the kernel, not the merges.** Seed 36 is proven: macOS produces the **Windows** golden to six decimals (area 9964.083286 against 9964.083285, faces 21, edges 45, the same lumps error), and `tests/robustness/goldens.json` carries `platforms` overrides for **windows only**, so macOS falls back to the Linux-recorded shared value. Seed 71 differs in area by 0.0002% with faces 20→19 and edges 52→50, a tolerance-driven topology flip; prism is 0.108% off a 0.1% tolerance. Neither test file was touched by any merge, `crates/kernel` and `crates/sketch` are byte-identical to the base, and #3891 changes no geom, kernel or sketch code. The one geometry change in the base is #4817's rewrite of `Seg2::polyline` through a new `chords()`, which is output-identical: the arc step's old `.max(1e-6)` could never bind, because `tol >= radius * 1e-6` forces the step above 2.8e-3, and the other branches apply the same `max(1e-9)` once instead of per branch. **Confirmed on the laptop, 2026-10-27, at 09c3052f: all three pass on Windows** (prism 4 s, seed 36 23 s, seed 71 7 s), so they are macOS-only. Recording macOS goldens is upstream's call, so none were blessed. |
-| **`every_complete_catalog_carries_every_english_message` fails** (ui-egui), on every platform, not only macOS. | **Inherited from upstream, not from this branch.** `assets/locales/ar.json` is missing the 11 `cmd.drawing_*` ids that **e0cb46c1** (#3890, "Drawing commands on the design's own drawings") added to `en.json`; Arabic is one of the five catalogs `COMPLETE` requires to carry every English message. Proven from the data rather than by a comparison run: the test reads the two catalogs and no code at all (`crates/ui-egui/src/i18n.rs:455`), at HEAD `en.json` already has all 11 and `ar.json` none, and nothing in this branch's working tree touches a locale file. **It will fail on the laptop too**, so the "3 macOS failures" line above is 3 of 4, and this is the one that is not macOS-only. Fixing it means writing Arabic for eleven command labels, which is upstream's to do (D5): report it on the owner's issue rather than translating for them. |
+| **`every_complete_catalog_carries_every_english_message` fails** (ui-egui), on every platform, not only macOS. | **Inherited from upstream, not from this branch.** `assets/locales/ar.json` is missing the 11 `cmd.drawing_*` ids that **e0cb46c1** (#3890, "Drawing commands on the design's own drawings") added to `en.json`; Arabic is one of the five catalogs `COMPLETE` requires to carry every English message. **Measured properly on 2026-10-29: it is three of those five, not one.** `ar`, `he` and `vi` are each missing the very same 11 ids, and `ja` and `zh` have all of them; the test stops at the first catalog it finds wanting, which is why only Arabic was named. So the fix is 33 strings, not 11, and it would go in one `assets/locales/pending/` file. Proven from the data rather than by a comparison run: the test reads the two catalogs and no code at all (`crates/ui-egui/src/i18n.rs:455`), at HEAD `en.json` already has all 11 and `ar.json` none, and nothing in this branch's working tree touches a locale file. **It will fail on the laptop too**, so the "3 macOS failures" line above is 3 of 4, and this is the one that is not macOS-only. Fixing it means writing Arabic, Hebrew and Vietnamese for eleven command labels, which is upstream's to do (D5): report it on the owner's issue rather than translating for them. **The five labels this branch added on 2026-10-29 do carry all five complete catalogs** (`assets/locales/pending/drawing-view-commands.json`), so the gap is upstream's alone and has not grown. |
 | **A chamfer takes noticeably long in the installed app** (reported by the owner, 2026-10-28, while chamfering an edge: both the preview and the action). | **Not the build and not this branch's work: the kernel, which upstream has paused.** Measured with the bundled `solidcraft-cli` from the installed 0.25.1 (a real `--release` build, opt-level 3 + thin LTO): the same chamfer on the same circular edge costs **42 ms** on a plain boss and **287 ms** once an unrelated R3 fillet sits at the other end of it — **6.8x** for identical geometry. A chamfer on a prismatic box is 9 ms an edge and stays linear (1 edge 17.6 ms, 4 edges 45.8 ms, baseline 9.0 ms), so the cost is not the chamfer but the blended faces already on the solid. `inspect.center_of_mass` was taken out of every script and the figures did not move, so it is feature computation, not meshing. The dialog previews live on a scratch session off the window thread (`ui-egui/src/preview.rs`), so the window stays responsive, but every change to the distance pays that cost before the preview redraws. **The report with its scripts is ready to post** under `kernel-perf`, which `skills/solidcraft-performance/SKILL.md` names as the response to a slow case ("do not rewrite kernel code for speed"). **Settled on 2026-10-28: OK does not re-pay it.** `ok_takes_the_previewed_chamfer_when_their_inputs_match` in `engine/src/tests.rs` measures it with the shared cache's `hits`, not the clock: after a preview of the same distance, OK's `scratch().compute_commands` takes the evaluation (hits +1); with no preview, or a preview of a different distance, it does not (hits +0). Giving the preview a cache of its own fails the test with "OK computed the chamfer the preview had already evaluated", so the test holds the sharing down. `last_recomputed` was tried first and is **0 either way**, so it does not discriminate — the probe that showed that is why the test counts hits instead. **So the double cost theory was wrong: no app-level fix is owed here.** What is left is the kernel's 287 ms, which the reuse only spares you when the preview of the value you OK has landed. Typing a value and pressing OK straight after beats the preview, and then the dialog pays in full — which is what the owner felt. After that, OK still warms the display meshes (`ComputedCommands::warm_meshes`), which a filleted body makes dearer; that part was not measured. |
 | **Owed on a machine with the headroom** (the laptop): **all done 2026-10-27.** | `cargo xtask wasm`: 12 crates build, no new warnings. CLI `run_results`: 18 passed. Clippy on geom, doc, render, io, engine and ui-egui with all targets: only the two Windows-only warnings `main` has. The three tests above pass. |
 | The dev window title says "v0.24.0" (before the `main` merge) or "v0.25.1" (after it, 51f0c2d0). | Expected: it is `main`'s version number, which can match an installed release. Tell the windows apart by the port (27900) and the data folder. |

@@ -391,7 +391,29 @@ fn hostile_drawing_params_never_panic() {
     run(&mut s, "drawing.create", json!({}));
     run(&mut s, "drawing.create", json!({"name": "Second"}));
     assert_eq!(s.scratch().open_drawing, s.open_drawing, "each copy has the drawing open");
-    let keys = ["name", "language", "units", "drawing", "key", "value", "values", "keys", "checkpoint", "id"];
+    let keys = [
+        "name",
+        "language",
+        "units",
+        "drawing",
+        "key",
+        "value",
+        "values",
+        "keys",
+        "checkpoint",
+        "id",
+        "projection",
+        "sheet",
+        "view",
+        "from",
+        "side",
+        "offset_mm",
+        "position_mm",
+        "component",
+        "style",
+        "clear",
+        "block",
+    ];
     let skipped = |id: &str| matches!(id, "doc.open" | "file.save" | "file.save_as") || id.starts_with("doc.recover");
     let mut internal = Vec::new();
     for spec in command_specs().iter().filter(|spec| spec.part != Part::Model && !skipped(spec.id)) {

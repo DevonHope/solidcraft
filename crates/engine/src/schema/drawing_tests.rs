@@ -6,6 +6,7 @@ use solidcraft_doc::metadata::MAX_KEYS;
 use super::{
     CloseParams, CloseResult, CreateParams, DeleteParams, DeleteResult, InspectParams, InspectResult, ListParams, ListResult, OpenParams,
     PropertiesParams, PropertiesRemoveParams, PropertiesRemoveResult, PropertiesResult, PropertiesSetParams, PropertiesSetResult, SetParams,
+    TitleBlockSetParams,
 };
 use crate::Session;
 use crate::schema::tests::{assert_keys, assert_strict_keeps_todays_errors, conforms, sketch_rectangle};
@@ -19,7 +20,8 @@ fn schemas_and_the_key_check_agree() {
     assert_keys(input_schema_for::<CloseParams>(), &[]);
     assert_keys(input_schema_for::<DeleteParams>(), &["drawing"]);
     assert_keys(input_schema_for::<InspectParams>(), &[]);
-    assert_keys(input_schema_for::<SetParams>(), &["language", "name", "units"]);
+    assert_keys(input_schema_for::<SetParams>(), &["language", "name", "projection", "units"]);
+    assert_keys(input_schema_for::<TitleBlockSetParams>(), &["block", "sheet"]);
     assert_keys(input_schema_for::<PropertiesParams>(), &[]);
     assert_keys(input_schema_for::<PropertiesSetParams>(), &["key", "value", "values"]);
     assert_keys(input_schema_for::<PropertiesRemoveParams>(), &["key", "keys"]);
@@ -48,8 +50,22 @@ fn strict_keeps_todays_errors() {
 #[test]
 fn strict_keeps_todays_errors_in_a_drawing() {
     let many: Map<String, Value> = (0..=MAX_KEYS).map(|i| (format!("key{i}"), json!("x"))).collect();
+    let absent = ids::encode(12_345);
     let cases = [
         ("drawing.set", json!({"name": 5})),
+        ("drawing.set", json!({"projection": "fourth"})),
+        ("drawing.title_block.set", json!({})),
+        ("drawing.title_block.set", json!({"block": "fancy"})),
+        ("drawing.title_block.set", json!({"sheet": 5, "block": "built_in"})),
+        ("drawing.view.base", json!({"view": "Front"})),
+        ("drawing.view.base", json!({"style": {"scale": "0:1"}})),
+        ("drawing.view.base", json!({"style": {"display_style": "hidden"}})),
+        ("drawing.view.projected", json!({"side": "above", "offset_mm": 50})),
+        ("drawing.view.projected", json!({"from": absent.clone(), "side": "above"})),
+        ("drawing.view.projected", json!({"from": absent.clone(), "side": "sideways", "offset_mm": 50})),
+        ("drawing.view.set", json!({})),
+        ("drawing.view.set", json!({"view": absent.clone(), "clear": ["colour"]})),
+        ("drawing.view.delete", json!({"view": "nope"})),
         ("drawing.set", json!({"language": false})),
         ("drawing.set", json!({"units": {"fixed": "mm"}})),
         ("drawing.set", json!({"units": "parsec"})),

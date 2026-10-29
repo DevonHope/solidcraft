@@ -1,0 +1,58 @@
+{
+  "en": {
+    "cmd.drawing_title_block_set": "Title Block",
+    "cmd.drawing_view_base": "Base View",
+    "cmd.drawing_view_delete": "Delete View",
+    "cmd.drawing_view_projected": "Projected View",
+    "cmd.drawing_view_set": "View Settings"
+  },
+  "ar": {
+    "cmd.drawing_title_block_set": "خانة العنوان",
+    "cmd.drawing_view_base": "العرض الأساسي",
+    "cmd.drawing_view_delete": "حذف العرض",
+    "cmd.drawing_view_projected": "العرض المسقط",
+    "cmd.drawing_view_set": "إعدادات العرض"
+  },
+  "de": {
+    "cmd.drawing_title_block_set": "Schriftfeld",
+    "cmd.drawing_view_base": "Basisansicht",
+    "cmd.drawing_view_delete": "Ansicht löschen",
+    "cmd.drawing_view_projected": "Projizierte Ansicht",
+    "cmd.drawing_view_set": "Ansichtseinstellungen"
+  },
+  "he": {
+    "cmd.drawing_title_block_set": "שדה כתובית",
+    "cmd.drawing_view_base": "תצוגת בסיס",
+    "cmd.drawing_view_delete": "מחיקת תצוגה",
+    "cmd.drawing_view_projected": "תצוגה מוטלת",
+    "cmd.drawing_view_set": "הגדרות תצוגה"
+  },
+  "ja": {
+    "cmd.drawing_title_block_set": "表題欄",
+    "cmd.drawing_view_base": "基準ビュー",
+    "cmd.drawing_view_delete": "ビューを削除",
+    "cmd.drawing_view_projected": "投影ビュー",
+    "cmd.drawing_view_set": "ビュー設定"
+  },
+  "ko": {
+    "cmd.drawing_title_block_set": "표제란",
+    "cmd.drawing_view_base": "기준 보기",
+    "cmd.drawing_view_delete": "보기 삭제",
+    "cmd.drawing_view_projected": "투상 보기",
+    "cmd.drawing_view_set": "보기 설정"
+  },
+  "vi": {
+    "cmd.drawing_title_block_set": "Khung tên",
+    "cmd.drawing_view_base": "Hình chiếu gốc",
+    "cmd.drawing_view_delete": "Xóa hình chiếu",
+    "cmd.drawing_view_projected": "Hình chiếu dẫn xuất",
+    "cmd.drawing_view_set": "Cài đặt hình chiếu"
+  },
+  "zh": {
+    "cmd.drawing_title_block_set": "标题栏",
+    "cmd.drawing_view_base": "基本视图",
+    "cmd.drawing_view_delete": "删除视图",
+    "cmd.drawing_view_projected": "投影视图",
+    "cmd.drawing_view_set": "视图设置"
+  }
+}

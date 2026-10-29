@@ -11,16 +11,20 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use solidcraft_doc::drawing::{self, Drawing, Source, Units};
+use solidcraft_doc::drawing_view::Looks;
 use solidcraft_doc::ids::{self, IdSource};
 use solidcraft_doc::metadata::{self, Owner};
+use solidcraft_geom::cell::Projection;
 use solidcraft_geom::drawing_sheet::{DrawingBorderProfile, Orientation, PaperSize, Sheet};
+use solidcraft_geom::title_block::TitleBlock;
 
 use super::CommandSpec;
 use crate::params::{bad, str_};
 use crate::schema::drawing::{
-    CloseParams, CloseResult, CreateParams, DeleteParams, DeleteResult, ExcludedResult, InspectParams, InspectResult, ListParams, ListResult,
-    ListedDrawing, OpenParams, OrientationResult, PropertiesParams, PropertiesRemoveParams, PropertiesRemoveResult, PropertiesResult,
-    PropertiesSetParams, PropertiesSetResult, SetParams, SheetComponentResult, SheetResult, SourceResult, UnitsResult,
+    BlockParam, CloseParams, CloseResult, CreateParams, DeleteParams, DeleteResult, ExcludedResult, InspectParams, InspectResult, ListParams,
+    ListResult, ListedDrawing, OpenParams, OrientationResult, PropertiesParams, PropertiesRemoveParams, PropertiesRemoveResult, PropertiesResult,
+    PropertiesSetParams, PropertiesSetResult, SetParams, SheetComponentResult, SheetResult, SourceResult, TitleBlockResult, TitleBlockSetParams,
+    UnitsResult,
 };
 use crate::schema::{TypedContract, output_schema_for};
 use crate::{Result, Session};
@@ -35,6 +39,7 @@ const SET: TypedContract<SetParams> = TypedContract::new();
 const PROPERTIES: TypedContract<PropertiesParams> = TypedContract::new();
 const PROPERTIES_SET: TypedContract<PropertiesSetParams> = TypedContract::new();
 const PROPERTIES_REMOVE: TypedContract<PropertiesRemoveParams> = TypedContract::new();
+const TITLE_BLOCK_SET: TypedContract<TitleBlockSetParams> = TypedContract::new();
 
 pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("drawing.create", "Create Drawing", crate::checked!("drawing.create", create))
@@ -120,6 +125,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         .contract(&PROPERTIES_REMOVE)
         .output(output_schema_for::<PropertiesRemoveResult>)
         .params("key, or keys: [keys] → metadata, removed: [keys that were there]"),
+    CommandSpec::new("drawing.title_block.set", "Title Block", crate::checked!("drawing.title_block.set", title_block_set))
+        .in_drawing()
+        .icon("settings")
+        .doc_only()
+        .contract(&TITLE_BLOCK_SET)
+        .output(output_schema_for::<InspectResult>)
+        .params(
+            "sheet?: the sheet's id (drawing.inspect; a drawing with one sheet may leave it out); block: \"built_in\" (SolidCraft's own 180 x 54 mm block, in the corner of the sheet's drawing border) or \"none\" → as drawing.inspect. The sheet keeps a copy, so a later built-in never changes it; a block that doesn't fit the sheet's border is refused. One undo step of the drawing.",
+        ),
 ];
 
 /// A reply built from its result type, so it can't drift from the output schema.
@@ -134,6 +148,16 @@ fn units(cmd: &str, p: &Value) -> Result<Option<Units>> {
         Some(Value::String(u)) if u == "follow_model" => Ok(Some(Units::FollowModel)),
         Some(Value::String(u)) => Ok(Some(Units::Fixed { unit: u.clone() })),
         Some(_) => Err(bad(cmd, "`units` is \"follow_model\" or a length unit such as \"mm\"")),
+    }
+}
+
+/// `projection` as given: first or third angle.
+fn projection(cmd: &str, p: &Value) -> Result<Option<Projection>> {
+    match p.get("projection") {
+        None => Ok(None),
+        Some(Value::String(angle)) if angle == "first" => Ok(Some(Projection::First)),
+        Some(Value::String(angle)) if angle == "third" => Ok(Some(Projection::Third)),
+        Some(_) => Err(bad(cmd, "`projection` is \"first\" or \"third\"")),
     }
 }
 
@@ -212,6 +236,10 @@ fn inspect(s: &mut Session, _p: &Value) -> Result<Value> {
     let mut sheets = Vec::with_capacity(d.sheets.len());
     for sheet in &d.sheets {
         let size = sheet.sheet.size_mm().map_err(|e| bad(cmd, e.to_string()))?;
+        let mut views = Vec::with_capacity(sheet.views.len());
+        for view in &sheet.views {
+            views.push(super::drawing_view::record_of(cmd, d, sheet, view)?);
+        }
         sheets.push(SheetResult {
             id: ids::encode(sheet.id),
             name: sheet.name.clone(),
@@ -223,6 +251,13 @@ fn inspect(s: &mut Session, _p: &Value) -> Result<Value> {
             dpi: sheet.dpi,
             documents: sheet.documents.map(|c| SheetComponentResult { source: ids::encode(c.source), component: c.component }),
             excluded: ExcludedResult { count: sheet.excluded.count, print: sheet.excluded.print },
+            title_block: sheet.title_block.as_ref().map(|block| TitleBlockResult {
+                size_mm: [block.size_mm.x, block.size_mm.y],
+                outline_line_mm: block.outline_line_mm,
+                cell_line_mm: block.cell_line_mm,
+                cells: block.cells.iter().map(|cell| cell.name.clone()).collect(),
+            }),
+            views,
         });
     }
     reply(&InspectResult {
@@ -233,6 +268,10 @@ fn inspect(s: &mut Session, _p: &Value) -> Result<Value> {
             Units::Fixed { unit } => UnitsResult::Fixed { unit: unit.clone() },
         },
         language: d.language.clone(),
+        projection: match d.projection {
+            Projection::First => "first".into(),
+            Projection::Third => "third".into(),
+        },
         properties: d.properties.0.clone(),
         sources: d.sources.iter().map(|source| SourceResult { id: ids::encode(source.id) }).collect(),
         sheets,
@@ -252,6 +291,35 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
         if let Some(units) = units(cmd, p)? {
             d.units = units;
         }
+        if let Some(projection) = projection(cmd, p)?
+            && projection != d.projection
+        {
+            // The other angle puts each projected view on the other side of its base view, so the
+            // views it has would show other sides of the model where they stand. Refuse rather
+            // than silently redraw them: the views are deleted and placed again, or the projection
+            // is chosen before they are added.
+            let views = d.sheets.iter().flat_map(|sheet| &sheet.views);
+            if views.clone().any(|view| matches!(view.looks, Looks::Projected { .. })) {
+                let how = "delete them first (drawing.view.delete), or set the projection before adding them";
+                return Err(bad(cmd, format!("the drawing has projected views, which the other projection would turn the other way: {how}")));
+            }
+            d.projection = projection;
+        }
+        Ok(())
+    })?;
+    inspect(s, &Value::Null)
+}
+
+fn title_block_set(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "drawing.title_block.set";
+    let request: TitleBlockSetParams = crate::schema::read(cmd, p)?;
+    s.edit_drawing(cmd, |d| {
+        let i = super::drawing_view::sheet_index(cmd, d, request.sheet.as_ref())?;
+        let sheet = Arc::make_mut(&mut d.sheets[i]);
+        sheet.title_block = match request.block {
+            BlockParam::BuiltIn => Some(TitleBlock::built_in()),
+            BlockParam::None => None,
+        };
         Ok(())
     })?;
     inspect(s, &Value::Null)
