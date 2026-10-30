@@ -929,9 +929,9 @@ Nothing is running.
 - **Timing on the laptop:** the first test build after the merge was 18 minutes for four crates;
   later engine rebuilds were 4 to 13 minutes.
 
-**State left:** Phase 2 is done and `main` is merged. The fork has 1c328d0e; the follow-up, the
-`drawing.sheet.set` commit and these notes are local until the owner OKs a push (`git log
---oneline origin/beta/drawings..HEAD`). Nothing is running.
+**State left:** Phase 2 is done and `main` is merged. Everything, the follow-up 71de74c7 included,
+was pushed to the fork with the owner's OK ("Push to fork"), so the fork's branch passes its tests
+again; `git log --oneline origin/beta/drawings..HEAD` shows anything local. Nothing is running.
 
 ---
 
