@@ -413,6 +413,10 @@ pub struct Session {
     /// Pairs `inspect.clearance` measured, by the bodies' geometry where they stood (shared with
     /// scratch copies): a body that did not change or move is not measured again.
     clearance_cache: std::sync::Arc<std::sync::Mutex<cmd::clearance::PairCache>>,
+    /// The lines drawing views were last drawn with (shared with scratch copies, so the lines a
+    /// worker's `drawing.update` draws are this session's too): what makes a view current or out
+    /// of date ([`drawing_view::Freshness`]). Never saved.
+    pub(crate) drawing_lines: std::sync::Arc<std::sync::Mutex<drawing_view::LinesCache>>,
     /// Recent body renames: the design before and after each, and the names, so undo and redo
     /// follow them without evaluating either.
     body_renames: Vec<BodyRename>,
@@ -603,6 +607,7 @@ impl Session {
             occurrence_bodies_cache: Default::default(),
             placement_index_cache: Default::default(),
             clearance_cache: Default::default(),
+            drawing_lines: Default::default(),
             body_renames: Vec::new(),
             contact_meshes: Default::default(),
             clipboard: Vec::new(),
@@ -1416,6 +1421,7 @@ impl Session {
             occurrence_bodies_cache: Default::default(),
             placement_index_cache: Default::default(),
             clearance_cache: self.clearance_cache.clone(),
+            drawing_lines: self.drawing_lines.clone(),
             body_renames: self.body_renames.clone(),
             contact_meshes: self.contact_meshes.clone(),
             clipboard: self.clipboard.clone(),

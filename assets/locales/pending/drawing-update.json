@@ -1,0 +1,34 @@
+{
+  "en": {
+    "cmd.drawing_status": "Drawing Status",
+    "cmd.drawing_update": "Update Drawing"
+  },
+  "ar": {
+    "cmd.drawing_status": "حالة الرسم",
+    "cmd.drawing_update": "تحديث الرسم"
+  },
+  "de": {
+    "cmd.drawing_status": "Zeichnungsstatus",
+    "cmd.drawing_update": "Zeichnung aktualisieren"
+  },
+  "he": {
+    "cmd.drawing_status": "מצב השרטוט",
+    "cmd.drawing_update": "עדכון שרטוט"
+  },
+  "ja": {
+    "cmd.drawing_status": "図面の状態",
+    "cmd.drawing_update": "図面を更新"
+  },
+  "ko": {
+    "cmd.drawing_status": "도면 상태",
+    "cmd.drawing_update": "도면 업데이트"
+  },
+  "vi": {
+    "cmd.drawing_status": "Trạng thái bản vẽ",
+    "cmd.drawing_update": "Cập nhật bản vẽ"
+  },
+  "zh": {
+    "cmd.drawing_status": "绘图状态",
+    "cmd.drawing_update": "更新绘图"
+  }
+}

@@ -18,14 +18,14 @@ Times in the log are local time on the machine that did the work, with the UTC o
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-29, morning, on the Mac (machine B, see [Machines](#machines)) |
+| **Last updated** | 2026-10-29, afternoon, on the laptop (machine A, see [Machines](#machines)) |
 | **Branch** | `beta/drawings`, built on **0e3074ac** (2026-10-28's last commit). What is on it since, and which of those are on the fork, is `git log --oneline 0e3074ac..HEAD` and `git log --oneline origin/beta/drawings..HEAD` — this row named SHAs twice and counted commits once, and went stale all three times. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
 | **Pushed?** | The fork's branch is `origin/beta/drawings`, and **`git log --oneline origin/beta/drawings..HEAD` is the only honest answer** to what is still local — this row has gone stale twice by trying to say it in words. Every push so far went up with the owner's explicit OK. Another machine gets what is there with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
-| **Phase** | **Phase 2 of 6 (headless drawing core): in progress; its done-when is met bar one measured exception** (two *drawings* of one part write the same marks but not the same bytes — [§8.2](#82-phases-26-full-task-lists)). Six of its nine items are done outright — exact view basis, view lines, standard layout, the paper scene builder, the drawing session (which **needed no code**: #3891 was already in the branch) and the **SVG export** — and two are part-done: **Records** but for the `dimensions` and `notes` lists, which moved to Phase 3, and the **view commands** but for `drawing.sheet.set`. Left whole: **Freshness and Update** ([§8.2](#82-phases-26-full-task-lists)). |
+| **Phase** | **Phase 2 of 6 (headless drawing core): all but one item done.** Its done-when is met bar one measured exception (two *drawings* of one part write the same marks but not the same bytes — [§8.2](#82-phases-26-full-task-lists)). Eight of its nine items are done outright — exact view basis, view lines, standard layout, the paper scene builder, the drawing session (which **needed no code**: #3891 was already in the branch), the SVG export and, on 2026-10-29 on the laptop, **Freshness and Update** (`drawing.update` and `drawing.status`) — and the last is part-done: the **view commands** but for `drawing.sheet.set`. **Records** is done but for the `dimensions` and `notes` lists, which moved to Phase 3. Freshness's app half (running `drawing.update` on the file worker) moved to Phase 5's Update button ([§8.2](#82-phases-26-full-task-lists)). |
 | **Running** | Nothing. |
 | **Last measured** | The chamfer case in [§8.6](#86-known-problems-and-fixes), 2026-10-28 on the Mac: the kernel's cost, and a test proving OK reuses the preview's evaluation. The report and its scripts are written and **not posted**. |
-| **Next action** | **Freshness and Update**, the last whole item of Phase 2: cache a view's lines against the view record, the source's document id and revision, the build and the chord; mark a view out of date when its source changes; and run `drawing.update` on the file worker, as `Kind::ExportDxf` does, never on the window thread (wasm runs it serially). `crate::drawing_view::drawn` is what it caches. Then `drawing.sheet.set`, and Phase 3 ([§8.2](#82-phases-26-full-task-lists)). **The gate: settled** (2026-10-29) — doc, io, geom and engine one crate at a time with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 RAYON_NUM_THREADS=2` and `nice -n 19`, and no workspace-wide build while free disk is under 60 GB ([§5](#5-working-rules-agreed-with-the-owner)). |
+| **Next action** | **`drawing.sheet.set`**, the last part of Phase 2's view commands (a sheet's size, orientation and border), then **Phase 3** ([§8.2](#82-phases-26-full-task-lists)). The gate on the laptop stays as §5 says: 4 jobs, 2 test threads, `RAYON_NUM_THREADS=2`, engine tests with `--lib`, and every filter counted before it runs. **Run `schema::` with `drawing`**: `schema_defaults_are_valid` doesn't match `drawing`, and it had been failing on the branch unseen (§8.2's freshness note). |
 | **Blockers** | None. **One decision open for the owner:** the default projection is **first angle**, which is one line in `crates/doc/src/drawing.rs` if third angle is wanted ([§8.2](#82-phases-26-full-task-lists)). |
 
 ---
@@ -259,6 +259,10 @@ git switch beta/drawings
   binary *and* all ten `crates/engine/tests/*.rs` integration binaries, each a full debuginfo link.
   That is what was running when the Mac rebooted. `--lib` is one link and holds the drawing, bom,
   metadata and joints tests. Add `RAYON_NUM_THREADS=2`: `RUST_TEST_THREADS` does not bound rayon.
+- **A `drawing` filter misses the schema-wide checks.** `schema::tests::schema_defaults_are_valid`
+  and the coverage test check every command's contract, and their names don't contain `drawing`.
+  One of them failed on the branch from 2026-10-29 morning until the laptop ran it that afternoon.
+  Add `schema::` (52 tests, about a second) to any run that touches a contract.
 - **Never wait with `pgrep -f "cargo test"`.** The waiting shell's own command line contains that
   string, so the loop never ends and spins a core. Use `pgrep -f '[c]argo test'`, or wait on a
   marker the job itself prints.
@@ -833,6 +837,33 @@ pushed is whatever `git log --oneline origin/beta/drawings..HEAD` leaves empty. 
 Two decisions are open for the owner: the default projection (first angle now), and whether the
 inherited 33-string catalog gap is fixed here or left to upstream.
 
+### Session 6: laptop (machine A), 2026-10-29 afternoon (UTC−4)
+
+**The owner's ask:** "pull the latest from the git repo", then "Yes, carry on" with Phase 2's
+Freshness and Update.
+
+- **Pulled** the Mac's 14 commits, 3bf352b7 → 41bf6ee8, a fast-forward with nothing local.
+  `upstream/main` had moved 418 commits past the branch's merge of it (51f0c2d0); not merged.
+- **Read before writing:** the Phase 2 notes (records keep nothing measured; `drawn` is what the
+  item caches), `drawing_view.rs`, `mesh_lines`, the sheet commands, the session's shared caches
+  (`clearance_cache` keyed by `geometry_key`) and the app's file worker.
+- **Built Freshness and Update** as §8.2's note describes, keyed on what lines depend on rather
+  than the plan's revision-based key. The app-side worker went to Phase 5, with the reason in the
+  note.
+- **Two slips caught by the build:** a sheet list is `Arc<Sheet>`, not `Sheet`; and a heredoc the
+  shell couldn't parse wrote nothing (the tests went in through the editor instead).
+- **A failure that wasn't ours, then was:** `schema_defaults_are_valid` failed on the Mac's
+  `PaperParams.sheet`. Fixing that one exposed `offset_mm` next (the test stops at the first). So
+  all 16 existing `present` fields in `schema/drawing_view.rs` got the guide's
+  `skip_serializing_if`, plus the two new ones, rather than one rebuild per field.
+- **Checked:** fmt, clippy on engine (only `main`'s Windows warning), `xtask lists`, `skills` and
+  `i18n`, and 110 engine tests matching `drawing` or `schema::`. Each build was about 1 m 40 s
+  after the first (11 m 39 s).
+
+**State left:** Phase 2 has `drawing.sheet.set` left, plus the dimension and note records that
+moved to Phase 3. The branch is 41bf6ee8 plus this session's one commit; **not pushed**: `git log
+--oneline origin/beta/drawings..HEAD` shows it. Nothing is running.
+
 ---
 
 ## 8. Reference
@@ -960,16 +991,105 @@ Update** and `drawing.sheet.set`, and the dimension and note records that moved 
     and `drawing.set` takes `projection`: the records of 2026-10-29 were saved but unreadable
     before this.
   - Stay under `drawing.`: `sheet.*` belongs to sheet metal and `view.*` to the camera.
-- [ ] **Freshness and Update.**
+- [x] **Freshness and Update** — done on the laptop, 2026-10-29 (session 6; the note below this
+  list). The plan as written:
   - Cache view lines keyed by the view record, the source's document id and revision (or file fingerprint), the build and the chord.
   - A changed source marks views out of date.
   - `drawing.update` recomputes on the file worker, like `Kind::ExportDxf`. Never on the window thread; wasm runs it serially.
+  - **What was built differs from the first bullet on purpose,** and the worker half moved to
+    Phase 5: see the note.
 - [x] **SVG export.** `drawing.export {format: "svg", path, sheet?}` through the existing paper SVG
   writer — done 2026-10-29 (machine B). It draws the marks `drawing.sheet.paper` gives, writes
   through io's atomic path, and **never onto a file that is already there** without
   `overwrite: true`: `safe_write::create_atomic` refuses one even if another writer makes it while
   the call runs, so there is no window between looking and writing. `dxf`, `pdf` and `png` are
   refused by name, not as unknown words.
+
+**Freshness and Update — `drawing.update` and `drawing.status`: done on the laptop, 2026-10-29.**
+
+A view's lines are now kept in memory once drawn, a view knows whether its kept lines are still
+the ones it would draw, and two commands use that: **`drawing.update {sheet?}`** draws every view
+that isn't current (every sheet when `sheet` is left out) and says what each one was, and
+**`drawing.status {sheet?}`** says which views are `current`, `out_of_date` or `not_drawn` without
+drawing anything. `drawing.sheet.paper` and `drawing.export` take a current view's kept lines as
+they are and draw (and keep) the others, so an export straight after an update draws nothing.
+Neither command changes the design: no undo step, nothing to save. A drawing still records no
+lines, so a design opened afresh has every view `not_drawn`.
+
+**The key is not the plan's, on purpose.** The plan asked for "the view record, the source's
+document id and revision (or file fingerprint), the build and the chord". Three of those turned
+out wrong for this design:
+- **The revision changes too often.** Drawings live inside the design now (D1, superseded), so
+  every drawing edit bumps it, and so does a model edit that leaves the geometry alone. Views would
+  go out of date for nothing.
+- **Most of the view record doesn't matter.** A view's lines are in model millimetres on its own
+  plane, so **where it sits on the paper never changes them**. Moving a view, or a base view
+  dragging its projections with it, redraws nothing. What matters is the basis and the chord, and
+  the chord follows the scale.
+- **The build is constant** within the process that holds the cache, and nothing is kept on disk.
+
+So the key is **what the lines depend on**: the geometry of every placed body
+(`ModelBody::geometry_key`, which `inspect.clearance` already caches by; if any body has no key,
+the placed world itself, held weakly), plus the view's basis and chord to the bit, per drawing and
+view. A good consequence: **undoing an edit of the part makes its views current again**, because
+the rebuilt bodies have the keys they had. That's measured, not assumed.
+
+**One mesh scene per chord.** `drawn` used to mesh the bodies again for every view. Views that
+aren't current are now grouped by chord, and the four standard views (one scale, so one chord)
+mesh the design once instead of four times.
+
+**Where it lives:** `engine/src/drawing_view.rs` (`Source`, `Freshness`, `LinesCache`, `draw`,
+`freshness`), `Session::drawing_lines` (an `Arc<Mutex<…>>` shared with `scratch()` copies,
+exactly as `clearance_cache` is), the commands in `engine/src/cmd/drawing_sheet.rs`, and their
+contracts in `engine/src/schema/drawing_view.rs`. The cache holds at most 256 views' lines and lets
+the longest unused go. A view let go is only drawn again, never lost.
+
+**What moved to Phase 5, and why.** The plan said `drawing.update` runs "on the file worker, like
+`Kind::ExportDxf`". That worker is the app's (`ui-egui/src/file_load.rs`): a full-screen card with
+its own title, icon and progress strings. Nothing in the window opens a drawing yet, so nothing
+would start it. The engine half is ready for it: because the cache is shared with scratch copies,
+an update the worker runs on `app.session.scratch()` is the window's without adopting the worker's
+session, which `an_update_drawn_on_a_scratch_copy_is_the_sessions` holds down. The wiring, and
+routing `drawing.sheet.paper` and `drawing.export` the same way, is now spelled out in Phase 5's
+"Out-of-date badge and Update button".
+
+**Found on the way: a schema test had been failing on the branch.** `schema_defaults_are_valid`
+(every published `default` must be a value its own property allows) failed on `drawing.sheet.paper`'s
+`sheet`: its schema published `"default": null` for a property that refuses null. The Mac's runs
+filtered on `drawing`, which that test's name doesn't contain, so it was never seen. The cause is
+the `present` pattern without `skip_serializing_if`, which `docs/book/src/dev/schemas.md` warns
+about. It bites only where the field's type is `Serialize` (here `SheetId` and the plain numbers),
+which is why `drawing.view.snapshot`'s fields passed. All 18 `present` fields in
+`schema/drawing_view.rs` now carry it: the 16 that were there, and the two new commands'. §5 now says to run
+`schema::` beside `drawing`.
+
+**Labels:** `cmd.drawing_update` ("Update Drawing") and `cmd.drawing_status` ("Drawing Status")
+in `assets/locales/pending/drawing-update.json`, in the same eight locales as the view commands'
+file, with the same house terms (図面, 绘图, 도면, bản vẽ, Zeichnung, שרטוט, الرسم). As before, the
+Hebrew, Vietnamese and Arabic wordings are worth a native speaker's look.
+
+**Glossary:** a new entry, **out of date**, for the idea this adds. It also names `current` and
+`not_drawn`.
+
+**Verified on the laptop** (Windows, 4 jobs, 2 test threads, `RAYON_NUM_THREADS=2`):
+- `cargo fmt --all --check` clean.
+- `cargo clippy -p solidcraft-engine --all-targets`: only `main`'s Windows-only `CHOSEN_PROGRAMS`
+  warning.
+- `cargo xtask lists`, `skills` and `i18n` ok.
+- **110 engine tests matching `drawing` or `schema::` pass** (`--lib`). Six are new:
+  - an update draws only what isn't current, and a second draws nothing;
+  - the paper scene takes the kept lines and the marks are the same as drawing them from nothing;
+  - editing the part puts the views out of date, and undoing it makes them current;
+  - moving a view keeps its lines, while a scale of its own puts it and its projections out of
+    date and not the iso view;
+  - an update on a scratch copy is the session's;
+  - an update is no edit of the drawing.
+
+  Plus the key checks and five strict-mode cases. `hostile_drawing_params_never_panic` covers both
+  commands, because it iterates the registry.
+- **Not run:** the engine-wide `hostile_params_never_panic` (10 minutes on 4 cores; its drawing
+  sibling covers these commands); the ui-egui label tests (the heaviest link here; the ids were
+  checked against the catalogs by `xtask lists` and `i18n` instead); and `cargo xtask ci`.
 
 **`drawing.export` — the SVG on disk, and the phase's done-when met: machine B, 2026-10-29.**
 
@@ -1591,7 +1711,22 @@ been run.
   - Dimension with two picks, snapping to vertices and edges, or one pick on a circle for Ø or R.
   - Click to place a note.
   - Hooks: `lib.rs:1174` (`start_interactive`).
-- [ ] **Out-of-date badge and Update button.**
+- [ ] **Out-of-date badge and Update button.** The engine half is done (Phase 2's Freshness and
+  Update, 2026-10-29): `drawing.status` gives each view `current`, `out_of_date` or `not_drawn`
+  without drawing anything, and `drawing.update` draws the rest. What this item adds:
+  - **Run `drawing.update` on the file worker**, as `file.export_view_dxf` runs
+    (`ui-egui/src/file_load.rs`): a `Kind` for it, the control channel's `control()` routing
+    `drawing.update` there, the loading card's title, icon and progress text, and cancel-on-drop
+    like `ExportDxf`'s. The worker runs on `app.session.scratch()`, and the lines cache is
+    **shared with scratch copies** (`Session::drawing_lines`), so what the worker draws is the
+    window's without adopting its session: `an_update_drawn_on_a_scratch_copy_is_the_sessions`
+    holds that down. The card needs new strings in a pending locale file.
+  - **Route `drawing.sheet.paper` and `drawing.export` through the worker too**: they draw the
+    views that aren't current, so on the window thread they would stall it after an edit.
+  - **The sheet canvas should paint a view's kept lines even when it is out of date**, with the
+    badge, rather than draw on the window thread. That needs a read of the kept lines that never
+    draws, which the engine doesn't have yet (`drawing_view::LinesCache` keeps them; nothing
+    returns stale ones).
 - [ ] **Theme.**
   - Add `paper` and `paper_ink` tokens, so the sheet stays white with black ink in dark themes.
   - Reuse the default tab accent: a new tab colour touches 24 theme files.

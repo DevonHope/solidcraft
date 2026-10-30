@@ -10,7 +10,7 @@ mod progress;
 mod projection;
 mod scene;
 
-pub(crate) use meshes::{WORKERS, prepare};
+pub(crate) use meshes::{Scene, WORKERS, prepare};
 pub(crate) use progress::Stage;
 pub(crate) use projection::{Part, Path, View};
 pub(crate) use scene::drawing;

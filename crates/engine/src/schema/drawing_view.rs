@@ -30,7 +30,7 @@ pub const DPI_RANGE: std::ops::RangeInclusive<f64> = 25.0..=2400.0;
 #[schemars(deny_unknown_fields)]
 pub struct SnapshotParams {
     pub view: ViewParam,
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "ScaleParam")]
     pub scale: Option<ScaleParam>,
     pub display_style: StyleParam,
@@ -44,7 +44,7 @@ pub struct SnapshotParams {
     pub sheet: SheetParam,
     /// Where the view's centre goes on the sheet, in paper millimetres from its lower-left
     /// corner (the sheet's centre when not given).
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Point2")]
     pub position_mm: Option<Point2>,
 }
@@ -316,25 +316,25 @@ impl JsonSchema for SideParam {
 #[serde(default, deny_unknown_fields)]
 #[schemars(deny_unknown_fields)]
 pub struct ViewStyleParams {
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "ScaleParam")]
     pub scale: Option<ScaleParam>,
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "StyleParam")]
     pub display_style: Option<StyleParam>,
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "StyleParam")]
     pub reference_style: Option<StyleParam>,
     /// Whether reference parts hide the model's lines behind them.
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "bool")]
     pub reference_hides_model: Option<bool>,
     /// Model millimetres added on every side of the view's extents, so reference parts around the
     /// model show inside its boundary: 0 to 100000.
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "f64")]
     pub reference_margin_mm: Option<f64>,
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "TangentEdgesParam")]
     pub tangent_edges: Option<TangentEdgesParam>,
 }
@@ -372,7 +372,7 @@ pub enum ViewStyleField {
 #[schemars(deny_unknown_fields)]
 pub struct BaseParams {
     /// The sheet to draw it on. A drawing with one sheet may leave it out.
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "SheetId")]
     pub sheet: Option<SheetId>,
     pub view: ViewParam,
@@ -381,7 +381,7 @@ pub struct BaseParams {
     pub component: u64,
     /// Where the view's centre goes, in paper millimetres from the sheet's lower-left corner (the
     /// centre of the sheet's drawing border when not given).
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Point2")]
     pub position_mm: Option<Point2>,
     pub style: ViewStyleParams,
@@ -413,12 +413,12 @@ pub struct ViewSetParams {
     pub view: ViewId,
     /// Where a base view's centre goes, in paper millimetres from the sheet's lower-left corner.
     /// Its projections move with it. A projected view takes `offset_mm` instead.
-    #[serde(default, deserialize_with = "super::present")]
+    #[serde(default, deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Point2")]
     pub position_mm: Option<Point2>,
     /// How far a projected view sits from the view it comes from, in paper millimetres along its
     /// side. A base view takes `position_mm` instead.
-    #[serde(default, deserialize_with = "super::present")]
+    #[serde(default, deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "f64")]
     pub offset_mm: Option<f64>,
     #[serde(default)]
@@ -447,7 +447,7 @@ pub struct ExportParams {
     /// The file to write. An existing file is not replaced unless `overwrite` says so.
     pub path: String,
     /// The sheet to write. A drawing with one sheet may leave it out.
-    #[serde(default, deserialize_with = "super::present")]
+    #[serde(default, deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "SheetId")]
     pub sheet: Option<SheetId>,
     /// Replace a file that is already at `path`. Without it, writing onto one is refused.
@@ -523,7 +523,7 @@ pub struct SnappedResult {
 #[schemars(deny_unknown_fields)]
 pub struct PaperParams {
     /// The sheet to work out. A drawing with one sheet may leave it out.
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "SheetId")]
     pub sheet: Option<SheetId>,
 }
@@ -606,6 +606,120 @@ pub struct PaperViewResult {
     pub hidden_runs: usize,
 }
 
+/// Draw the lines of every view of the open drawing that isn't current, on one sheet or on all
+/// of them, and keep them for `drawing.sheet.paper` and `drawing.export`. A view that is current
+/// is kept as it is. Saves nothing: a drawing records no lines.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct UpdateParams {
+    /// The sheet to update. Every sheet of the drawing when not given.
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "SheetId")]
+    pub sheet: Option<SheetId>,
+}
+
+/// Say which views of the open drawing are current, out of date or not drawn yet, on one sheet or
+/// on all of them. Draws nothing.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct StatusParams {
+    /// The sheet to look at. Every sheet of the drawing when not given.
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "SheetId")]
+    pub sheet: Option<SheetId>,
+}
+
+/// How fresh a view's lines are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FreshnessResult {
+    /// Its lines are the ones it would draw now.
+    Current,
+    /// It was drawn, but the design, or the view's own direction or scale, has changed since.
+    OutOfDate,
+    /// It has not been drawn since the design was opened.
+    NotDrawn,
+}
+
+impl From<crate::drawing_view::Freshness> for FreshnessResult {
+    fn from(freshness: crate::drawing_view::Freshness) -> Self {
+        match freshness {
+            crate::drawing_view::Freshness::Current => FreshnessResult::Current,
+            crate::drawing_view::Freshness::OutOfDate => FreshnessResult::OutOfDate,
+            crate::drawing_view::Freshness::NotDrawn => FreshnessResult::NotDrawn,
+        }
+    }
+}
+
+/// What `drawing.update` returns.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct UpdateResult {
+    /// Each sheet updated, in the drawing's order.
+    pub sheets: Vec<UpdatedSheetResult>,
+    /// How many views had their lines drawn now.
+    pub drawn: usize,
+    /// How many views were current already, and kept their lines.
+    pub kept: usize,
+    /// In the warn parameter-check mode: what the call's parameters got wrong.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub param_warnings: Vec<String>,
+}
+
+/// One sheet `drawing.update` updated.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct UpdatedSheetResult {
+    /// The sheet's id.
+    pub id: String,
+    /// Each of its views, in the sheet's order.
+    pub views: Vec<UpdatedViewResult>,
+}
+
+/// One view `drawing.update` looked at.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct UpdatedViewResult {
+    pub id: String,
+    /// How fresh it was before the update; it is current after it.
+    pub was: FreshnessResult,
+    pub scale: ScaleResult,
+    /// How far a curved face may lie from the lines drawn for it, in model millimetres.
+    pub chord_mm: f64,
+    /// Runs of visible line, and of hidden line where the view's style draws them.
+    pub visible_runs: usize,
+    pub hidden_runs: usize,
+}
+
+/// What `drawing.status` returns.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct StatusResult {
+    /// Each sheet looked at, in the drawing's order.
+    pub sheets: Vec<StatusSheetResult>,
+    /// How many of the views are current, out of date and not drawn yet.
+    pub current: usize,
+    pub out_of_date: usize,
+    pub not_drawn: usize,
+    /// In the warn parameter-check mode: what the call's parameters got wrong.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub param_warnings: Vec<String>,
+}
+
+/// One sheet `drawing.status` looked at.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct StatusSheetResult {
+    /// The sheet's id.
+    pub id: String,
+    /// Each of its views, in the sheet's order.
+    pub views: Vec<StatusViewResult>,
+}
+
+/// How fresh one view is.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct StatusViewResult {
+    pub id: String,
+    pub status: FreshnessResult,
+}
+
 /// Lay the four standard views out on a sheet of the open drawing: the front view, the top and
 /// right views projected from it and lined up with it, and an isometric view in the cell they
 /// leave free, all at the largest preset scale that fits. One undo step of the drawing.
@@ -614,12 +728,12 @@ pub struct PaperViewResult {
 #[schemars(deny_unknown_fields)]
 pub struct StandardParams {
     /// The sheet to lay them out on. A drawing with one sheet may leave it out.
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "SheetId")]
     pub sheet: Option<SheetId>,
     /// The space left between neighbouring views, in paper millimetres: 0 to 1000, and 10 when not
     /// given.
-    #[serde(deserialize_with = "super::present")]
+    #[serde(deserialize_with = "super::present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "f64")]
     pub gap_mm: Option<f64>,
 }

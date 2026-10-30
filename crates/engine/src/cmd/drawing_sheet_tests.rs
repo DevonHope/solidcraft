@@ -285,3 +285,163 @@ fn two_drawings_of_one_part_draw_the_same_marks_in_their_own_order() {
     let groups = |text: &str| text.lines().filter(|line| line.starts_with("<g ")).count();
     assert_eq!((groups(&a), groups(&b)), (7, 7), "the same seven groups either way");
 }
+
+/// The ids of the four standard views on that drawing, in the order the layout saves them:
+/// front, then the top and right views projected from it, then the isometric view.
+fn standard_views() -> (Session, Vec<String>) {
+    let mut s = drawn();
+    run(&mut s, "drawing.title_block.set", json!({"block": "built_in"}));
+    let made = run(&mut s, "drawing.view.standard", json!({}));
+    let ids = made["views"].as_array().expect("the views").iter().filter_map(|view| view["id"].as_str().map(str::to_string)).collect();
+    (s, ids)
+}
+
+/// Each view's status in `drawing.status`, by id.
+fn statuses(s: &mut Session) -> std::collections::BTreeMap<String, String> {
+    let reply = run(s, "drawing.status", json!({}));
+    let views = reply["sheets"][0]["views"].as_array().expect("the views").clone();
+    views.iter().filter_map(|view| Some((view["id"].as_str()?.to_string(), view["status"].as_str()?.to_string()))).collect()
+}
+
+/// How many views' lines the session has worked out rather than taken as kept.
+fn worked_out(s: &Session) -> usize {
+    s.drawing_lines.lock().map(|cache| cache.worked_out).unwrap_or_default()
+}
+
+/// Every view in `statuses` is `status`.
+fn all(statuses: &std::collections::BTreeMap<String, String>, status: &str) -> bool {
+    !statuses.is_empty() && statuses.values().all(|s| s == status)
+}
+
+/// A view is not drawn until something draws it; an update draws the views that aren't current
+/// and keeps them, and a second update draws nothing.
+#[test]
+fn an_update_draws_the_views_that_arent_current_and_only_those() {
+    let (mut s, ids) = standard_views();
+    let status = run(&mut s, "drawing.status", json!({}));
+    assert_eq!((status["current"].clone(), status["out_of_date"].clone(), status["not_drawn"].clone()), (json!(0), json!(0), json!(4)));
+    assert_eq!(worked_out(&s), 0, "laying the views out drew no lines");
+
+    let updated = run(&mut s, "drawing.update", json!({}));
+    assert_eq!((updated["drawn"].clone(), updated["kept"].clone()), (json!(4), json!(0)));
+    let views = updated["sheets"][0]["views"].as_array().expect("the views").clone();
+    assert_eq!(views.len(), 4);
+    for view in &views {
+        assert_eq!(view["was"], "not_drawn", "{view}");
+        assert!(view["visible_runs"].as_u64().is_some_and(|n| n > 0), "every view draws lines: {view}");
+    }
+    assert_eq!(worked_out(&s), 4);
+    let fresh = statuses(&mut s);
+    assert!(all(&fresh, "current"), "{fresh:?}");
+    assert_eq!(fresh.keys().cloned().collect::<std::collections::BTreeSet<_>>(), ids.into_iter().collect());
+
+    let again = run(&mut s, "drawing.update", json!({}));
+    assert_eq!((again["drawn"].clone(), again["kept"].clone()), (json!(0), json!(4)), "a current view is kept as it is");
+    assert_eq!(worked_out(&s), 4);
+    // Naming the drawing's one sheet updates that sheet.
+    let sheet = updated["sheets"][0]["id"].clone();
+    let named = run(&mut s, "drawing.update", json!({"sheet": sheet}));
+    assert_eq!(named["sheets"].as_array().map(Vec::len), Some(1));
+}
+
+/// The paper scene and the export take the lines an update drew, and the marks are the ones
+/// working them out again gives: keeping them changes nothing but the time.
+#[test]
+fn the_paper_scene_takes_the_kept_lines_and_draws_the_same_marks() {
+    let (mut s, _) = standard_views();
+    // Drawing the sheet keeps its lines too, so it is current after.
+    let first = run(&mut s, "drawing.sheet.paper", json!({}));
+    assert_eq!(worked_out(&s), 4);
+    assert!(all(&statuses(&mut s), "current"));
+    let kept = run(&mut s, "drawing.sheet.paper", json!({}));
+    assert_eq!(worked_out(&s), 4, "the second scene took the kept lines");
+    assert_eq!(kept["scene"], first["scene"]);
+    let path = std::env::temp_dir().join(format!("solidcraft-kept-lines-{}.svg", std::process::id()));
+    run(&mut s, "drawing.export", json!({"format": "svg", "path": path.to_string_lossy(), "overwrite": true}));
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(worked_out(&s), 4, "the export took them as well");
+
+    // Let the kept lines go: the scene worked out from nothing is the same scene.
+    if let Ok(mut cache) = s.drawing_lines.lock() {
+        *cache = crate::drawing_view::LinesCache::default();
+    }
+    let again = run(&mut s, "drawing.sheet.paper", json!({}));
+    assert_eq!(again["scene"], first["scene"]);
+}
+
+/// Editing the part puts every view out of date, and undoing the edit makes them current again:
+/// the bodies are known by their geometry, not by when they were built.
+#[test]
+fn editing_the_part_puts_its_views_out_of_date_and_undoing_it_makes_them_current() {
+    let (mut s, _) = standard_views();
+    run(&mut s, "drawing.update", json!({}));
+    let drawing = s.open_drawing.map(ids::encode).expect("a drawing open");
+    // The model's commands wait while a drawing is open.
+    run(&mut s, "drawing.close", json!({}));
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "corner": [200, 0, 0], "body_name": "Lug"}));
+    run(&mut s, "drawing.open", json!({"drawing": drawing}));
+    let edited = statuses(&mut s);
+    assert!(all(&edited, "out_of_date"), "{edited:?}");
+
+    run(&mut s, "drawing.close", json!({}));
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "drawing.open", json!({"drawing": drawing}));
+    let undone = statuses(&mut s);
+    assert!(all(&undone, "current"), "{undone:?}");
+
+    // Edited again and updated: the update says what it found, and draws them.
+    run(&mut s, "drawing.close", json!({}));
+    run(&mut s, "edit.redo", json!({}));
+    run(&mut s, "drawing.open", json!({"drawing": drawing}));
+    let updated = run(&mut s, "drawing.update", json!({}));
+    assert_eq!((updated["drawn"].clone(), updated["kept"].clone()), (json!(4), json!(0)));
+    let was: Vec<Value> = updated["sheets"][0]["views"].as_array().expect("the views").iter().map(|view| view["was"].clone()).collect();
+    assert_eq!(was, vec![json!("out_of_date"); 4]);
+    assert!(all(&statuses(&mut s), "current"));
+}
+
+/// Moving a view on the sheet leaves its lines as they are; giving it a scale of its own puts it
+/// and the views projected from it out of date, and no other.
+#[test]
+fn a_views_lines_follow_its_direction_and_scale_not_where_it_sits() {
+    let (mut s, ids) = standard_views();
+    run(&mut s, "drawing.update", json!({}));
+    let [front, top, right, iso] = [0, 1, 2, 3].map(|i| ids.get(i).cloned().expect("four views"));
+    run(&mut s, "drawing.view.set", json!({"view": front, "position_mm": [150, 160]}));
+    let moved = statuses(&mut s);
+    assert!(all(&moved, "current"), "moving a view and the views projected from it redraws nothing: {moved:?}");
+
+    run(&mut s, "drawing.view.set", json!({"view": front, "style": {"scale": "1:5"}}));
+    let scaled = statuses(&mut s);
+    for view in [&front, &top, &right] {
+        assert_eq!(scaled.get(view).map(String::as_str), Some("out_of_date"), "{view}: {scaled:?}");
+    }
+    assert_eq!(scaled.get(&iso).map(String::as_str), Some("current"), "{scaled:?}");
+    let updated = run(&mut s, "drawing.update", json!({}));
+    assert_eq!((updated["drawn"].clone(), updated["kept"].clone()), (json!(3), json!(1)));
+}
+
+/// What `drawing.update` draws on a scratch copy of the session (the file worker's copy) is the
+/// session's: its views are current, and its paper scene draws nothing again.
+#[test]
+fn an_update_drawn_on_a_scratch_copy_is_the_sessions() {
+    let (mut s, _) = standard_views();
+    let mut worker = s.scratch();
+    let updated = run(&mut worker, "drawing.update", json!({}));
+    assert_eq!(updated["drawn"], 4);
+    assert!(all(&statuses(&mut s), "current"));
+    let before = worked_out(&s);
+    run(&mut s, "drawing.sheet.paper", json!({}));
+    assert_eq!(worked_out(&s), before);
+}
+
+/// An update changes nothing in the design: no undo step, nothing to save.
+#[test]
+fn an_update_is_no_edit_of_the_drawing() {
+    let (mut s, _) = standard_views();
+    let (doc, undo, revision) = (s.doc.clone(), s.undo.len(), s.revision);
+    run(&mut s, "drawing.update", json!({}));
+    run(&mut s, "drawing.status", json!({}));
+    assert!(Arc::ptr_eq(&doc, &s.doc), "the design is the one it was");
+    assert_eq!((s.undo.len(), s.revision), (undo, revision));
+}

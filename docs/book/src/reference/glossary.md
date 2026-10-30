@@ -288,6 +288,23 @@ component changes every copy. The browser names occurrences with a number, such 
 - **Elsewhere:** occurrence, instance, component instance.
 - **For translators:** not a *pattern instance*.
 
+### out of date
+
+Said of a drawing view whose lines were drawn from the design as it was before a change to the
+design, or to the view's own direction or scale.
+
+Drawing the view again brings it up to date: `drawing.update` draws every view that is out of date
+or not drawn yet, and the paper scene and the export draw what they need themselves. Moving a view
+on its sheet never puts it out of date, and a drawing saves no lines, so a view not drawn since the
+design was opened is *not drawn* rather than out of date.
+
+- **In SolidCraft:** `drawing.status`, whose views are `current`, `out_of_date` or `not_drawn`;
+  `drawing.update`.
+- **Don't use:** stale, dirty, needs rebuild.
+- **Elsewhere:** out of date, needs updating, stale view.
+- **For translators:** not a design with unsaved changes, and not a linked design that has changed
+  on disk (`component.update_links`).
+
 ### part number
 
 A design property that holds the identifier an organisation gives a design.
