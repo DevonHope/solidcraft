@@ -18,15 +18,15 @@ Times in the log are local time on the machine that did the work, with the UTC o
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-29, afternoon, on the laptop (machine A, see [Machines](#machines)) |
+| **Last updated** | 2026-10-29, late evening, on the laptop (machine A, see [Machines](#machines)) |
 | **Branch** | `beta/drawings`, built on **0e3074ac** (2026-10-28's last commit). What is on it since, and which of those are on the fork, is `git log --oneline 0e3074ac..HEAD` and `git log --oneline origin/beta/drawings..HEAD` — this row named SHAs twice and counted commits once, and went stale all three times. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
 | **Pushed?** | The fork's branch is `origin/beta/drawings`, and **`git log --oneline origin/beta/drawings..HEAD` is the only honest answer** to what is still local — this row has gone stale twice by trying to say it in words. Every push so far went up with the owner's explicit OK. Another machine gets what is there with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
-| **Phase** | **Phase 2 of 6 (headless drawing core): all but one item done.** Its done-when is met bar one measured exception (two *drawings* of one part write the same marks but not the same bytes — [§8.2](#82-phases-26-full-task-lists)). Eight of its nine items are done outright — exact view basis, view lines, standard layout, the paper scene builder, the drawing session (which **needed no code**: #3891 was already in the branch), the SVG export and, on 2026-10-29 on the laptop, **Freshness and Update** (`drawing.update` and `drawing.status`) — and the last is part-done: the **view commands** but for `drawing.sheet.set`. **Records** is done but for the `dimensions` and `notes` lists, which moved to Phase 3. Freshness's app half (running `drawing.update` on the file worker) moved to Phase 5's Update button ([§8.2](#82-phases-26-full-task-lists)). |
+| **Phase** | **Phase 2 of 6 (headless drawing core): done** on 2026-10-29, with all nine items in: exact view basis, view lines, standard layout, the paper scene builder, the drawing session, Records (but for the `dimensions` and `notes` lists, which moved to Phase 3), the view commands (`drawing.sheet.set` last, on the laptop), Freshness and Update (`drawing.update`, `drawing.status`; running it on the app's file worker moved to Phase 5), and the SVG export. Its done-when is met but for byte-identical files from two *drawings* of one part, which waits on the paint-order decision ([§8.2](#82-phases-26-full-task-lists)). **`upstream/main` is merged up to 313d2bdb** (71de74c7, [§6.10](#610-merge-upstream-main-again--done-71de74c7-2026-10-29)). |
 | **Running** | Nothing. |
 | **Last measured** | The chamfer case in [§8.6](#86-known-problems-and-fixes), 2026-10-28 on the Mac: the kernel's cost, and a test proving OK reuses the preview's evaluation. The report and its scripts are written and **not posted**. |
-| **Next action** | **`drawing.sheet.set`**, the last part of Phase 2's view commands (a sheet's size, orientation and border), then **Phase 3** ([§8.2](#82-phases-26-full-task-lists)). The gate on the laptop stays as §5 says: 4 jobs, 2 test threads, `RAYON_NUM_THREADS=2`, engine tests with `--lib`, and every filter counted before it runs. **Run `schema::` with `drawing`**: `schema_defaults_are_valid` doesn't match `drawing`, and it had been failing on the branch unseen (§8.2's freshness note). |
-| **Blockers** | None. **One decision open for the owner:** the default projection is **first angle**, which is one line in `crates/doc/src/drawing.rs` if third angle is wanted ([§8.2](#82-phases-26-full-task-lists)). |
+| **Next action** | **Phase 3: text, notes and dimensions** ([§8.2](#82-phases-26-full-task-lists)). Its first item is **text in the paper scene** (`Item::Text`, laid out with `sketch::TextMetrics` and drawn as Liberation Sans outlines, D3), then the title block's fields, notes, and dimensions. **Settle the owner's decisions first** (Blockers below): the paint order shapes where notes and dimensions sit in the record. The laptop's gate stays as §5 says: 4 jobs, 2 test threads, `RAYON_NUM_THREADS=2`, engine tests with `--lib`, every filter counted before it runs, and `schema::` beside `drawing`. |
+| **Blockers** | None in the code. **Decisions open for the owner**, the first two before Phase 3's notes and dimensions: (1) **paint order**: a sheet paints its views in id order, which is random, so overlaps (and soon annotations) have no order; the fix is a z-order in the sheet record ([§8.2](#82-phases-26-full-task-lists)'s export note). (2) **Default projection**: first angle now; third angle is one line in `crates/doc/src/drawing.rs`. (3) Should `drawing.view.standard` turn hidden lines on? (4) The inherited 33-string catalog gap: fix here or leave to upstream? (5) Post the slow-chamfer report upstream (§8.6)? |
 
 ---
 
@@ -96,8 +96,8 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` not started.
   with `app.quit {force: true}`.
 - [x] `BETA-BASE.md` lists every merged SHA in order.
 
-### Phases 2–6 (not started)
-- [ ] **Phase 2:** headless drawing core: session, records, views, layout, paper scene, commands, Update, SVG.
+### Phases 2–6
+- [x] **Phase 2:** headless drawing core: session, records, views, layout, paper scene, commands, Update, SVG. **Done 2026-10-29**, bar two things it hands on: the dimension and note records (Phase 3) and running `drawing.update` on the app's file worker (Phase 5). Its done-when is met but for byte-identical files from two *drawings* of one part, which waits on the owner's paint-order decision ([§8.2](#82-phases-26-full-task-lists)).
 - [ ] **Phase 3:** text, notes and dimensions.
 - [ ] **Phase 4:** DXF, PDF and PNG export.
 - [ ] **Phase 5:** Drawing workspace UI.
@@ -500,6 +500,38 @@ The owner chose to finish Phase 1 first, then merge `main`. Measured with `git m
 `format` tests; engine `--lib` `drawing`, `schema::` and `edit`; then `cargo build -p solidcraft`
 and a short launch.
 
+### 6.10 Merge upstream `main` again — done, 71de74c7 (2026-10-29)
+
+The owner chose "Merge main first", before `drawing.sheet.set`. `upstream/main` **313d2bdb** was
+424 commits past 51f0c2d0's merge. **Among them is #8249 (9bcb2ffe, 2026-10-28), "Drawings: first
+landing from the drawings branch"**: upstream squashed the whole `drawings` branch (ebafe074) into
+`main` as one commit. This branch carries that same branch as real merges (BETA-BASE rows 1 and 3),
+so git saw the drawings work twice: **35 files conflicted, ten of them add/add**. None of the PRs
+stacked here (#7316, #6482, #7430, #3891, #5867, #6788) has landed upstream; all six are still open.
+
+**How it was resolved: by what upstream changed beyond the drawings branch**, measured per file
+against four versions (ebafe074, the landing 9bcb2ffe, `main` now, and ours):
+
+| Group | Files | Resolution |
+|---|---|---|
+| Upstream's file is the drawings branch's, unchanged | 12: the paper scene, title block, SVG writer, `doc/drawing.rs`, `io/design/drawing.rs` and their tests | **Ours.** Upstream has nothing there we lack. |
+| The landing was `main`'s only change | 6: `eval_more.rs`, `sheet.rs` (#7316's ArcMap stays), `cmd/metadata.rs` (#3891's shared readers stay), `io/design/drawing_tests.rs`, `io/mutate.rs`, the file-formats skill | **Ours**: the same work, resolved our way. |
+| `main` changed a drawings file after the landing | 3: geom `cell.rs`, `drawing_view.rs`, `lib.rs` | Three-way against ebafe074: **clean**. |
+| Landing and later changes both | 7: doc `drawing_tests.rs`, `format.rs`, `lib.rs`; geom `tests.rs`; io `lib.rs`; the glossary; `io/design.rs` | Three-way against the landing, so only `main`'s later work comes in: clean but for io `lib.rs` (#3891's removal of the `.scdwg` constants stays) and the glossary (both entries). **`io/design.rs` is `main`'s file with #3891's five changes put back**, because #3891's inlining of four helpers was a pure refactor and `main` has since given them the `limits` checks. |
+| Upstream's resolution of our own conflict | `doc/metadata.rs`, `engine/cmd/bom.rs` | **Upstream's**: it resolved the same `bom_type` question c4434126 did, and its tests expect a component's refusal to list `bom_type`. One line of ours is kept: `bom_type` on a design or drawing still says to use `component.metadata.set`, which #3891's own test expects. |
+| Ordinary conflicts | `placement_reuse.rs`, `cmd/mod.rs`, `schema/mod.rs`, `edit.rs`, `file.rs` | Both sides. `same_geometry_inputs` compares `drawings` and `main`'s new `point_clouds`; `execute` runs `allowed()` and names the command in a parameter error; `select.clear` and `file.save` keep `.any_part()`. |
+
+**Checked:** every line `main` added before or after the landing, in the 32 files both sides
+changed, is in the result. `cargo check --all-targets` on geom, doc, render, io, engine, ui-egui,
+mcp, the app and the CLI: **no warnings at all** (`main` has fixed the old Windows-only ones).
+Clippy on doc, io and engine silent; fmt, lists and skills pass. Tests: geom 96, doc 97, io 82,
+engine 250 (drawing, schema, edit, bom, metadata, file), all passing.
+
+**Worth knowing for the next merge:** upstream's `main` now holds the drawings work itself. When the
+stacked PRs land there, the same "both added" pattern will recur for their files; resolve them the
+same way, by what upstream changed beyond what this branch already has. A future rebuild of the
+beta could start from `main` rather than from `drawings`.
+
 ---
 
 ## 7. Event log
@@ -865,6 +897,31 @@ moved to Phase 3. The branch is 41bf6ee8 plus this session's commits, pushed to 
 owner's OK ("Push to fork"); `git log --oneline origin/beta/drawings..HEAD` shows anything local.
 Nothing is running.
 
+### Session 7: laptop (machine A), 2026-10-29 evening (UTC−4)
+
+**The owner's ask:** "whats next", then "Merge main first" (before `drawing.sheet.set`).
+
+- **About 19:30: the merge.** `upstream/main` 313d2bdb, 424 commits past the last merge. The dry run
+  showed 35 conflicting files, ten of them "both added": upstream had squashed the whole `drawings`
+  branch into `main` the day before (#8249). Each file was resolved by what upstream changed
+  beyond the drawings branch, as §6.10 tabulates.
+- **Two of `main`'s tests caught what the merge got wrong at first.** The bill-of-materials refusal
+  test expected `bom_type` among a component's keys, which upstream's own resolution gives and ours
+  didn't, so upstream's `doc/metadata.rs` and `cmd/bom.rs` were taken. Then #3891's drawing test
+  expected a design's refusal to name `component.metadata.set`, so that one line of ours went back
+  in. Each round was one doc build plus one engine build, about 15 minutes.
+- **22:17: committed the merge** as **71de74c7**. Nothing of `main`'s outside the landing was lost
+  (the line check), and nine crates type-check with no warnings.
+- **Then `drawing.sheet.set`**, with its schema, label and tests (§8.2's note). One strict-mode
+  pair failed only on a random sheet id inside the message; those two cases are now the behaviour
+  test's alone.
+- **Timing on the laptop:** the first test build after the merge was 18 minutes for four crates;
+  later engine rebuilds were 4 to 13 minutes.
+
+**State left:** Phase 2 is done and `main` is merged. The branch is the merge, the
+`drawing.sheet.set` commit and these notes; `git log --oneline origin/beta/drawings..HEAD` shows
+what isn't on the fork yet (all of it, until the owner OKs a push). Nothing is running.
+
 ---
 
 ## 8. Reference
@@ -973,8 +1030,8 @@ Update** and `drawing.sheet.set`, and the dimension and note records that moved 
   - Add `ObjectKind::View`, `Dimension` and `Note`.
   - One group per view: visible strokes 0.5 mm, hidden strokes 0.25 mm dashed (#7430).
   - Mind the 100k-record cap per scene: simplify to paper tolerance.
-- [~] **View commands.** **Seven of the eight are done (2026-10-29, machine B);** the notes below
-  record what they decide. Only `drawing.sheet.set` is left.
+- [x] **View commands.** **All eight are done:** seven on machine B on 2026-10-29, the notes below
+  recording what they decide, and `drawing.sheet.set` on the laptop the same evening.
   - [x] `drawing.view.base` and `drawing.view.projected` (the names #5349 reserves, checked against
     its branch);
   - [x] `drawing.view.standard`: the four views, at the one scale the layout fits, in the largest
@@ -984,7 +1041,8 @@ Update** and `drawing.sheet.set`, and the dimension and note records that moved 
   - [x] ~~`drawing.delete`~~ **`drawing.view.delete`**: `drawing.delete` already deletes a
     *drawing* (#3890), so the plan's id was taken. A base view takes the views projected from it
     with it; dimensions will join that cascade when they exist (Phase 3).
-  - [ ] `drawing.sheet.set`; [x] `drawing.title_block.set` (the built-in block, or none).
+  - [x] `drawing.sheet.set` (a sheet's name, paper, orientation and picture resolution; the
+    note below this list); [x] `drawing.title_block.set` (the built-in block, or none).
   - [x] `drawing.sheet.paper` (read-only scene JSON): the sheet's furniture, its block and a group
     per view, in the paper format the writers read. An engine test takes it through `Scene::prepare`
     into io's `paper_svg`, so the chain to a picture is proven here, not assumed.
@@ -1005,6 +1063,42 @@ Update** and `drawing.sheet.set`, and the dimension and note records that moved 
   `overwrite: true`: `safe_write::create_atomic` refuses one even if another writer makes it while
   the call runs, so there is no window between looking and writing. `dxf`, `pdf` and `png` are
   refused by name, not as unknown words.
+
+**`drawing.sheet.set` — the last view command: done on the laptop, 2026-10-29 evening.**
+
+`drawing.sheet.set {sheet?, name?, size?, orientation?, dpi?}` changes a sheet's name, its paper (a
+standard size such as `{"standard": "a4"}`, or `{"custom": {"sides_mm": [w, h]}}`), the way it lies
+and its picture resolution, in one undo step of the drawing, and replies as `drawing.inspect`. What
+isn't given stays as it is.
+
+- **The drawing's own rules judge it.** `Drawing::validate` already checks a sheet's name, its
+  paper, its resolution (25 to 2400 dpi) and that a title block still fits the border, and
+  `Session::edit_drawing` runs it, so the command adds no checks of its own. It refuses in the
+  record's words and leaves the drawing as it was. A4 portrait with the built-in block on it is
+  refused, as the block's own test expects.
+- **The border stays ISO 5457's.** The ISO profile is the only one there is, so there's nothing to
+  choose, and a sheet without a border can't be drawn.
+- **The views keep their places on the paper.** A view off the new paper is still drawn where it is
+  (the record allows it: "a drawing to fix, not a file to refuse"). Re-running
+  `drawing.view.standard` lays them out again.
+- **Freshness follows by itself.** A view at a scale of its own stays current: its lines depend on
+  its scale, not the paper. A fitted view is fitted again where it sits, and goes out of date only
+  if that gives another scale. `a_new_paper_puts_only_the_views_it_refits_out_of_date` measures
+  both: on A3 a front view at the sheet's centre fits at 2:1, on A4 the same point is near the
+  edges and it fits at 1:1.
+- **The paper's schema is shared** with `drawing.view.snapshot`'s sheet (`size_schema()` in
+  `schema/drawing_view.rs`), so the two commands describe paper sizes the same way.
+- **The title-block test no longer sets the paper by hand**: it said "since no command changes it
+  yet", and now one does.
+- **Label:** `cmd.drawing_sheet_set` ("Sheet Settings") in
+  `assets/locales/pending/drawing-sheet-set.json`, eight locales, using the view commands' words for
+  paper (用紙, 용지, trang giấy, 图纸).
+- **Two strict-mode cases were left out on purpose:** a zero side and 10 dpi are refused by the
+  drawing's rules, whose message names the sheet's random id, so two sessions never give the same
+  words. The behaviour test covers both.
+- **Verified:** 133 engine tests matching `drawing` or `schema::` (two new, the freshness one
+  included; `hostile_drawing_params_never_panic` now also sends hostile `size`, `orientation` and
+  `dpi`); clippy on engine silent; fmt, lists and skills pass.
 
 **Freshness and Update — `drawing.update` and `drawing.status`: done on the laptop, 2026-10-29.**
 

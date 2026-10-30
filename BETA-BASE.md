@@ -16,9 +16,10 @@ the head that was merged. Status and the task list are in [PROGRESS.md](PROGRESS
 | 8 | 09c3052f | PR #5867, `drawing.view.snapshot` (W07 V2), with projected views, measurement on view frames and model extents on a plane | cce39b40d1cb177baad320ddede0e153452fce90 |
 | 9 | 4f18ddea | PR #6788, tolerance and dimension text (W09c), the head that answers our review | 9e6b1bb2b5f3f21a6b730a07d8dc7d6d446fe1ed |
 | 10 | 51f0c2d0 | `upstream/main` again: 144 commits past the base. 5 additive conflicts, plus `placement_reuse.rs` comparing `drawings` | 9fb41f83789453dbdc119512638def4f15de2c2f |
+| 11 | 71de74c7 | `upstream/main` again: 424 commits, among them **#8249**, upstream's squashed landing of the `drawings` branch on `main`. Resolved file by file by what upstream changed beyond that branch; see PROGRESS.md §6.10 | 313d2bdb415ab22913989e8f1abee28416c1a015 |
 
-Rows 0–9 are the Phase 1 stack (2026-10-27); row 10 brings `main` up to date. PROGRESS.md §6.9 and
-the merge commit's message record how each conflict was resolved.
+Rows 0–9 are the Phase 1 stack (2026-10-27); rows 10 and 11 bring `main` up to date. PROGRESS.md §6.9 and
+§6.10, and the merge commits' messages, record how each conflict was resolved.
 
 **Rebuilding this base from scratch** is possible from the heads above, but the resolutions are
 the work: see PROGRESS.md §6.1 for the drawings merge and the #3891 merge commit's own message,
