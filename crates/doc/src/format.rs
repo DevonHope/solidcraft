@@ -715,19 +715,27 @@ pub fn read(s: &str) -> Result<Document> {
         || d.params.len() > crate::document::MAX_PARAMS
         || d.components.len() > crate::document::MAX_FEATURES
         || d.timeline_groups.len() > crate::document::MAX_FEATURES
-        || d.timeline_groups.iter().any(|group| group.features.len() > crate::document::MAX_FEATURES)
+        || d.timeline_groups
+            .iter()
+            .any(|group| group.features.len() > crate::document::MAX_FEATURES || group.joints.len() > crate::document::MAX_FEATURES)
     {
         return Err(DocError::Invalid("document too large".into()));
     }
+    crate::point_cloud::check_all(&d.point_clouds)?;
     let feature_ids: std::collections::BTreeSet<_> = d.features.iter().map(|feature| feature.id).collect();
     let mut group_ids = std::collections::BTreeSet::new();
     let mut grouped_features = std::collections::BTreeSet::new();
+    let joint_ids: std::collections::BTreeSet<_> = d.assembly.joints.iter().map(|joint| joint.id).collect();
+    let mut grouped_joints = std::collections::BTreeSet::new();
     for group in &d.timeline_groups {
         if group.name.trim().is_empty() || group.name.len() > 128 || !group_ids.insert(group.id) {
             return Err(DocError::Invalid("damaged design: invalid timeline folder".into()));
         }
         if group.parent.is_some_and(|parent| parent == group.id) {
             return Err(DocError::Invalid("damaged design: timeline folder cannot contain itself".into()));
+        }
+        if group.joints.iter().any(|joint| !joint_ids.contains(joint) || !grouped_joints.insert(*joint)) {
+            return Err(DocError::Invalid("damaged design: invalid joint in a timeline folder".into()));
         }
         if group.features.iter().any(|feature| !feature_ids.contains(feature) || !grouped_features.insert(*feature)) {
             return Err(DocError::Invalid("damaged design: invalid feature in a timeline folder".into()));
@@ -1507,16 +1515,14 @@ mod tests {
         file["format_pending"] = serde_json::json!(["not-a-change-anyone-made"]);
         file["features"] = serde_json::json!([{"type": "emboss", "face": {"body": "Body", "at": [0, 0, 0], "a_newer_key": true}}]);
         let error = read(&file.to_string()).unwrap_err().to_string();
-        if PENDING.is_empty() {
-            assert!(error.contains("emboss face"), "a list beside a folded format means nothing: {error}");
-        } else {
-            assert_eq!(
-                error,
-                format!(
-                    "this design was saved by a newer SolidCraft (file format {FORMAT} with `not-a-change-anyone-made`, which this version doesn't know): update SolidCraft to open it"
-                )
-            );
-        }
+        // With changes pending, FORMAT is made of them; once they are folded it is the folded
+        // format, which is made of changes too. Either way an unknown change is a newer build's.
+        assert_eq!(
+            error,
+            format!(
+                "this design was saved by a newer SolidCraft (file format {FORMAT} with `not-a-change-anyone-made`, which this version doesn't know): update SolidCraft to open it"
+            )
+        );
     }
 
     /// Drawings follow the same rules from their own first format: folded formats follow on from 1

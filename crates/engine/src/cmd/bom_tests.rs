@@ -267,7 +267,7 @@ fn a_components_refusals_speak_of_part_properties() {
     assert!(
         bogus.ends_with(
             "`bogus` is not a part property: SolidCraft's are project, part_number, revision, author, organization, description, \
-             license; another tool's data goes under a reverse-DNS key such as `com.example.tool`"
+             license, bom_type; another tool's data goes under a reverse-DNS key such as `com.example.tool`"
         ),
         "{bogus}"
     );
