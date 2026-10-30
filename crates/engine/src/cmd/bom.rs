@@ -28,7 +28,10 @@ pub static COMMANDS: &[CommandSpec] = &[
     ),
     CommandSpec::new("component.metadata.set", "Change Part Properties", set).icon("settings").doc_only().params(
         "component: id or name (not the root: use document.metadata.set); part_number?, description?, revision?: text (empty or null \
-         removes); bom_type?: normal|phantom|reference|purchased|inseparable (empty or null: normal); values?: {key: value} \n         (SolidCraft's keys, as document.metadata's properties lists them, and bom_type, or a reverse-DNS key holding an \n         object); properties?: {name: text, …} (free properties; empty or null removes). All or nothing, one undo step \n         → component, metadata, properties, changed: [keys]",
+         removes); bom_type?: normal|phantom|reference|purchased|inseparable (empty or null: normal); values?: {key: value} \
+         (SolidCraft's keys, as document.metadata's properties lists them, bom_type, or a reverse-DNS key holding an object); \
+         properties?: {name: text, …} (free properties; empty or null removes). All or nothing, one undo step → component, \
+         metadata, properties, changed: [keys]",
     ),
     CommandSpec::new("assembly.bom", "Bill of Materials", bom).at("SOLID", "INSPECT").icon("bom").noundo().params(
         "component?: id or name (default the design); levels?: flat (default: every part at any depth, counted through its \
@@ -78,8 +81,9 @@ fn read(s: &mut Session, p: &Value) -> Result<Value> {
     for k in BOM_KEYS {
         out.insert(k.to_string(), json!(m.text(k)));
     }
+    // A bill of materials type is a component's; the design has none.
     if id != 0 {
-        out.insert("bom_type".into(), json!(m.bom_type().as_str()));
+        out.insert(BOM_TYPE.into(), json!(m.bom_type().as_str()));
     }
     out.insert("metadata".into(), json!(m));
     out.insert("properties".into(), properties);
@@ -120,8 +124,8 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
         Some(Value::Object(_)) => return Err(bad(cmd, format!("`values` can hold at most {MAX_KEYS} keys"))),
         Some(_) => return Err(bad(cmd, "`values` must be an object: {key: value, …}")),
     }
-    for k in BOM_KEYS.iter().copied().chain([BOM_TYPE]) {
-        if let Some(v) = p.get(k) {
+    for k in BOM_KEYS.iter().chain([&BOM_TYPE]) {
+        if let Some(v) = p.get(*k) {
             entries.push((k.to_string(), v.clone()));
         }
     }
@@ -132,7 +136,7 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
         Some(_) => return Err(bad(cmd, "`properties` must be an object: {name: text, …}")),
     };
     if entries.is_empty() && props.is_empty() {
-        return Err(bad(cmd, format!("give {}, {BOM_TYPE}, values or properties ({}, {BOM_TYPE})", BOM_KEYS.join(", "), key_list(Owner::Component))));
+        return Err(bad(cmd, format!("give {}, {BOM_TYPE}, values or properties ({})", BOM_KEYS.join(", "), key_list(Owner::Component))));
     }
     let mut changed: Vec<String> = Vec::new();
     for (k, v) in entries {

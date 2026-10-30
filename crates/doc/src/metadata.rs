@@ -6,8 +6,7 @@
 //! each may be set (the design, a component or both), how its value is checked and its label.
 //! It keeps every other key exactly as it was through open, edit and save. Other tools keep
 //! their own data under one reverse-DNS key each (`com.example.tool`), holding an object.
-//! A component's part properties have one more key, outside the table: its bill of materials
-//! type (`bom_type`).
+//! A component's part properties have one more key: its bill of materials type (`bom_type`).
 //!
 //! Reading never validates: a well-known key holding something other than text is kept as it
 //! is and reads as absent, so a file another tool wrote always opens. Writing through
@@ -95,8 +94,8 @@ pub static KEYS: &[Key] = &[
 pub static BOM_KEYS: &[&str] = &[PART_NUMBER, DESCRIPTION, REVISION];
 
 /// A component's [`BomType`] in the bill of materials (one of [`BomType::as_str`]'s words). It is
-/// a part property of a component, not of the design, so it isn't a row of [`KEYS`] and the Design
-/// Properties dialog doesn't list it.
+/// a part property of a component only, not a row of [`KEYS`], so the Design Properties dialog
+/// doesn't list it and a design refuses it.
 pub const BOM_TYPE: &str = "bom_type";
 
 /// Longest key, in bytes.
@@ -121,9 +120,10 @@ pub fn keys(owner: Owner) -> impl Iterator<Item = &'static Key> {
     KEYS.iter().filter(move |k| k.scope.covers(owner))
 }
 
-/// The names of [`keys`]`(owner)`, as refusals list them.
+/// The names of [`keys`]`(owner)`, and a component's [`BOM_TYPE`], as refusals list them.
 pub fn key_list(owner: Owner) -> String {
-    keys(owner).map(|k| k.name).collect::<Vec<_>>().join(", ")
+    let bom_type = (owner == Owner::Component).then_some(BOM_TYPE);
+    keys(owner).map(|k| k.name).chain(bom_type).collect::<Vec<_>>().join(", ")
 }
 
 /// One of SolidCraft's keys, by name.
@@ -169,19 +169,17 @@ fn text(key: &str, value: Value) -> Result<Option<Value>> {
     }
 }
 
-/// [`BOM_TYPE`]'s check: a component's part property only, one of [`BomType::as_str`]'s words;
-/// empty text (like `null`) removes it, which reads as [`BomType::Normal`].
-fn bom_type(owner: Owner, value: Value) -> Result<Option<Value>> {
-    if owner != Owner::Component {
-        return Err(invalid(format!("`{BOM_TYPE}` is a component's part property: set it with component.metadata.set")));
-    }
-    let Some(Value::String(s)) = text(BOM_TYPE, value)? else { return Ok(None) };
-    if BomType::parse(&s).is_none() {
+/// The bill of materials type's check: one of [`BomType`]'s words, which empty text (like
+/// `null`) removes, so the component reads as normal again.
+fn bom_type(value: Value) -> Result<Option<Value>> {
+    let Some(word) = text(BOM_TYPE, value)? else { return Ok(None) };
+    let s = word.as_str().unwrap_or_default();
+    if BomType::parse(s).is_none() {
         let shown: String = s.chars().take(64).collect();
         let words: Vec<&str> = BomType::ALL.iter().map(|t| t.as_str()).collect();
         return Err(invalid(format!("`{BOM_TYPE}` is one of {}, not `{shown}`", words.join(", "))));
     }
-    Ok(Some(Value::String(s)))
+    Ok(Some(word))
 }
 
 fn depth(v: &Value) -> usize {
@@ -287,8 +285,12 @@ impl Metadata {
 
 /// `value` as `key` may hold it in `owner`'s metadata (`None`: remove the key), or why it can't.
 fn check(owner: Owner, key: &str, value: Value) -> Result<Option<Value>> {
+    if key == BOM_TYPE && owner == Owner::Component {
+        return bom_type(value);
+    }
+    // Said in so many words: "not a design property" would leave the caller looking for where it is one.
     if key == BOM_TYPE {
-        return bom_type(owner, value);
+        return Err(invalid(format!("`{BOM_TYPE}` is a component's part property: set it with component.metadata.set")));
     }
     if let Some(k) = self::key(key).filter(|k| k.scope.covers(owner)) {
         return (k.check)(key, value);
@@ -384,8 +386,7 @@ mod tests {
         assert_eq!(newer.bom_type(), BomType::Normal);
         assert_eq!(newer.get(BOM_TYPE), Some(&json!("kit")));
         assert!(!keys(Design).any(|k| k.name == BOM_TYPE), "the Design Properties dialog doesn't list it");
-        let refused = Metadata::default().set(Design, BOM_TYPE, json!("phantom")).unwrap_err().to_string();
-        assert!(refused.contains("a component's part property"), "only a component takes one: {refused}");
+        assert!(Metadata::default().set(Design, BOM_TYPE, json!("phantom")).is_err(), "a design has no bill of materials type");
     }
 
     #[test]
@@ -425,7 +426,7 @@ mod tests {
         }
         // Every key SolidCraft took on the design and on a component before the table still is.
         assert_eq!(key_list(Design), "project, part_number, revision, author, organization, description, license");
-        assert_eq!(key_list(Component), key_list(Design));
+        assert_eq!(key_list(Component), format!("{}, {BOM_TYPE}", key_list(Design)), "a component also takes its bill of materials type");
     }
 
     #[test]
@@ -457,7 +458,7 @@ mod tests {
         assert_eq!(
             refusal(Component, "colour"),
             "`colour` is not a part property: SolidCraft's are project, part_number, revision, author, organization, \
-             description, license; another tool's data goes under a reverse-DNS key such as `com.example.tool`"
+             description, license, bom_type; another tool's data goes under a reverse-DNS key such as `com.example.tool`"
         );
         for owner in [Design, Component] {
             let word = owner.names().0;
