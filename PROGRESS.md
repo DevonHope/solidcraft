@@ -861,8 +861,9 @@ Freshness and Update.
   after the first (11 m 39 s).
 
 **State left:** Phase 2 has `drawing.sheet.set` left, plus the dimension and note records that
-moved to Phase 3. The branch is 41bf6ee8 plus this session's one commit; **not pushed**: `git log
---oneline origin/beta/drawings..HEAD` shows it. Nothing is running.
+moved to Phase 3. The branch is 41bf6ee8 plus this session's commits, pushed to the fork with the
+owner's OK ("Push to fork"); `git log --oneline origin/beta/drawings..HEAD` shows anything local.
+Nothing is running.
 
 ---
 
