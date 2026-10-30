@@ -425,13 +425,49 @@ fn a_title_block_is_put_on_a_sheet_and_refused_where_it_cant_be_drawn() {
     assert_eq!(run(&mut s, "drawing.inspect", json!({}))["sheets"][0]["title_block"], block, "it is saved, not worked out again");
     assert_eq!(run(&mut s, "drawing.title_block.set", json!({"block": "none"}))["sheets"][0]["title_block"], json!(null));
     // A sheet too small for it: the block is 180 x 54 mm, and A5 portrait's drawing area is
-    // narrower. The sheet's paper is set by hand here, since no command changes it yet.
-    let open = s.drawing("test").expect("a drawing open").clone();
-    let mut small = (*open).clone();
-    let a5 = Sheet::standard(solidcraft_geom::drawing_sheet::PaperSize::A5, solidcraft_geom::drawing_sheet::Orientation::Portrait);
-    Arc::make_mut(&mut small.sheets[0]).sheet = a5;
-    s.doc_mut().put_drawing(Arc::new(small));
+    // narrower.
+    run(&mut s, "drawing.sheet.set", json!({"size": {"standard": "a5"}, "orientation": "portrait"}));
     let tight = why(&mut s, "drawing.title_block.set", json!({"block": "built_in"}));
+    assert!(tight.contains("a title block fits inside the drawing border"), "{tight}");
+}
+
+/// A sheet's paper, the way it lies, its name and its picture resolution change in one undo step,
+/// and what isn't given stays. The drawing's own rules refuse what they refuse, a title block that
+/// would no longer fit among them, and a refusal leaves the drawing as it was.
+#[test]
+fn a_sheets_paper_name_and_resolution_change_in_one_undo_step() {
+    let mut s = drawn();
+    let steps = s.undo.len();
+    let changed = json!({"size": {"standard": "a4"}, "orientation": "portrait", "dpi": 150, "name": "Details"});
+    let sheet = run(&mut s, "drawing.sheet.set", changed)["sheets"][0].clone();
+    assert_eq!(point(&sheet["size_mm"]), Vec2::new(210.0, 297.0), "A4 portrait");
+    assert_eq!((sheet["orientation"].clone(), sheet["dpi"].clone(), sheet["name"].clone()), (json!("portrait"), json!(150.0), json!("Details")));
+    assert_eq!(s.undo.len(), steps + 1, "one undo step of the drawing");
+
+    let custom = run(&mut s, "drawing.sheet.set", json!({"size": {"custom": {"sides_mm": [500, 300]}}}))["sheets"][0].clone();
+    let mut sides = [point(&custom["size_mm"]).x, point(&custom["size_mm"]).y];
+    sides.sort_by(f64::total_cmp);
+    assert_eq!(sides, [300.0, 500.0]);
+    assert_eq!((custom["orientation"].clone(), custom["name"].clone(), custom["dpi"].clone()), (json!("portrait"), json!("Details"), json!(150.0)));
+
+    run(&mut s, "edit.undo", json!({}));
+    run(&mut s, "edit.undo", json!({}));
+    let back = run(&mut s, "drawing.inspect", json!({}))["sheets"][0].clone();
+    assert_eq!((point(&back["size_mm"]), back["dpi"].clone()), (Vec2::new(420.0, 297.0), json!(300.0)), "A3 landscape at 300 dpi again");
+
+    let before = s.drawing("test").map(Arc::clone).expect("a drawing open");
+    for (p, says) in [
+        (json!({"dpi": 10}), "dpi"),
+        (json!({"name": "  "}), "name"),
+        (json!({"size": {"custom": {"sides_mm": [0, 100]}}}), "sheet"),
+        (json!({"size": {"custom": {"sides_mm": [6000, 100]}}}), "sheet"),
+    ] {
+        let e = why(&mut s, "drawing.sheet.set", p.clone());
+        assert!(e.contains(says), "{p}: {e}");
+        assert!(s.drawing("test").is_ok_and(|now| Arc::ptr_eq(now, &before)), "{p} left the drawing as it was");
+    }
+    run(&mut s, "drawing.title_block.set", json!({"block": "built_in"}));
+    let tight = why(&mut s, "drawing.sheet.set", json!({"size": {"standard": "a5"}, "orientation": "portrait"}));
     assert!(tight.contains("a title block fits inside the drawing border"), "{tight}");
 }
 

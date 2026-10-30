@@ -1,0 +1,26 @@
+{
+  "en": {
+    "cmd.drawing_sheet_set": "Sheet Settings"
+  },
+  "ar": {
+    "cmd.drawing_sheet_set": "إعدادات الورقة"
+  },
+  "de": {
+    "cmd.drawing_sheet_set": "Blatteinstellungen"
+  },
+  "he": {
+    "cmd.drawing_sheet_set": "הגדרות הגיליון"
+  },
+  "ja": {
+    "cmd.drawing_sheet_set": "用紙設定"
+  },
+  "ko": {
+    "cmd.drawing_sheet_set": "용지 설정"
+  },
+  "vi": {
+    "cmd.drawing_sheet_set": "Cài đặt trang giấy"
+  },
+  "zh": {
+    "cmd.drawing_sheet_set": "图纸设置"
+  }
+}

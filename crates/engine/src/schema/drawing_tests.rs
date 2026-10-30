@@ -6,7 +6,7 @@ use solidcraft_doc::metadata::MAX_KEYS;
 use super::{
     CloseParams, CloseResult, CreateParams, DeleteParams, DeleteResult, InspectParams, InspectResult, ListParams, ListResult, OpenParams,
     PropertiesParams, PropertiesRemoveParams, PropertiesRemoveResult, PropertiesResult, PropertiesSetParams, PropertiesSetResult, SetParams,
-    TitleBlockSetParams,
+    SheetSetParams, TitleBlockSetParams,
 };
 use crate::Session;
 use crate::schema::tests::{assert_keys, assert_strict_keeps_todays_errors, conforms, sketch_rectangle};
@@ -22,6 +22,7 @@ fn schemas_and_the_key_check_agree() {
     assert_keys(input_schema_for::<InspectParams>(), &[]);
     assert_keys(input_schema_for::<SetParams>(), &["language", "name", "projection", "units"]);
     assert_keys(input_schema_for::<TitleBlockSetParams>(), &["block", "sheet"]);
+    assert_keys(input_schema_for::<SheetSetParams>(), &["dpi", "name", "orientation", "sheet", "size"]);
     assert_keys(input_schema_for::<PropertiesParams>(), &[]);
     assert_keys(input_schema_for::<PropertiesSetParams>(), &["key", "value", "values"]);
     assert_keys(input_schema_for::<PropertiesRemoveParams>(), &["key", "keys"]);
@@ -70,6 +71,12 @@ fn strict_keeps_todays_errors_in_a_drawing() {
         ("drawing.view.standard", json!({"sheet": 5})),
         ("drawing.sheet.paper", json!({"sheet": 5})),
         ("drawing.sheet.paper", json!({"sheet": "nope"})),
+        ("drawing.sheet.set", json!({"size": "a3"})),
+        ("drawing.sheet.set", json!({"size": {"standard": "a9"}})),
+        ("drawing.sheet.set", json!({"orientation": "sideways"})),
+        ("drawing.sheet.set", json!({"dpi": "high"})),
+        ("drawing.sheet.set", json!({"name": 5})),
+        ("drawing.sheet.set", json!({"sheet": 5, "dpi": 150})),
         ("drawing.update", json!({"sheet": 5})),
         ("drawing.update", json!({"sheet": "nope"})),
         ("drawing.update", json!({"sheet": absent})),
@@ -127,6 +134,9 @@ fn replies_match_the_output_schemas() {
     let fixed = run("drawing.set", json!({"name": "Plate", "language": "en", "units": "in"}), inspect());
     assert_eq!(fixed["units"], json!({"fixed": {"unit": "in"}}));
     run("drawing.set", json!({"units": "follow_model"}), inspect());
+    let sheet = json!({"size": {"standard": "a4"}, "orientation": "portrait", "dpi": 150, "name": "Sheet A"});
+    run("drawing.sheet.set", sheet, inspect());
+    run("drawing.sheet.set", json!({"size": {"custom": {"sides_mm": [500, 300]}}}), inspect());
     run("drawing.properties.set", json!({"key": "part_number", "value": "P-1"}), output_schema_for::<PropertiesSetResult>());
     run("drawing.properties.set", json!({"values": {"revision": "B", "author": "A. Person"}}), output_schema_for::<PropertiesSetResult>());
     run("drawing.properties.set", json!({"key": "author", "value": null}), output_schema_for::<PropertiesSetResult>());

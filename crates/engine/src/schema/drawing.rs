@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 use solidcraft_doc::ids;
 use solidcraft_doc::metadata::MAX_KEYS;
 use solidcraft_geom::cell::Projection;
+use solidcraft_geom::drawing_sheet::{Orientation, SheetSize};
 
 use super::check::whole;
 use super::drawing_view::{SheetId, ViewRecordResult};
@@ -114,6 +115,69 @@ pub enum BlockParam {
     BuiltIn,
     /// No title block on the sheet.
     None,
+}
+
+/// Change a sheet of the open drawing: its name, its paper's size and the way it lies, and the
+/// resolution its pictures render at. What isn't given stays as it is. One undo step of the
+/// drawing.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct SheetSetParams {
+    /// The sheet, by id (`drawing.inspect`). A drawing with one sheet may leave it out.
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "SheetId")]
+    pub sheet: Option<SheetId>,
+    /// The sheet's new name: 1 to 256 bytes, not only spaces.
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String")]
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "SheetSizeParam")]
+    pub size: Option<SheetSizeParam>,
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "OrientationParam")]
+    pub orientation: Option<OrientationParam>,
+    /// The resolution the sheet's pictures (its shaded views) render at: 25 to 2400 dots per inch.
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "f64")]
+    pub dpi: Option<f64>,
+}
+
+/// A sheet's paper, read as the record reads it.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(transparent)]
+pub struct SheetSizeParam(pub SheetSize);
+
+impl JsonSchema for SheetSizeParam {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SheetPaperSize".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let size = super::drawing_view::size_schema();
+        schemars::json_schema!({
+            "description": "The sheet's paper: a standard size, {\"standard\": \"a3\"} (a0 to a5, letter, legal, ansi_a to ansi_f, arch_a to arch_e, arch_e1), or {\"custom\": {\"sides_mm\": [w, h]}}, each side above 0 and at most 5000 mm. The views keep their places on the paper, and a title block that no longer fits the drawing border is refused.",
+            "anyOf": size["anyOf"].clone()
+        })
+    }
+}
+
+/// Which way a sheet lies, read as the record reads it.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(transparent)]
+pub struct OrientationParam(pub Orientation);
+
+impl JsonSchema for OrientationParam {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SheetOrientation".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "Which way the sheet lies: landscape, with the long side across, or portrait.",
+            "type": "string",
+            "enum": ["landscape", "portrait"]
+        })
+    }
 }
 
 /// The projection a drawing's views are drawn in.

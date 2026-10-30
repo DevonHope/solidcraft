@@ -159,26 +159,31 @@ impl JsonSchema for SheetParam {
         "SnapshotSheet".into()
     }
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        let papers: Vec<Value> = PaperSize::ALL.iter().filter_map(|p| serde_json::to_value(p).ok()).collect();
-        let sides = json!({"type": "array", "items": {"type": "number", "exclusiveMinimum": 0}, "minItems": 2, "maxItems": 2});
-        let standard = json!({"type": "object", "properties": {"standard": {"type": "string", "enum": papers}}, "required": ["standard"], "additionalProperties": false});
-        let custom = json!({
-            "type": "object",
-            "properties": {"custom": {"type": "object", "properties": {"sides_mm": sides}, "required": ["sides_mm"], "additionalProperties": false}},
-            "required": ["custom"],
-            "additionalProperties": false
-        });
         json_schema!({
             "description": "The page the view fits and centres on (A3 landscape at 300 dpi when not given).",
             "type": "object",
             "properties": {
-                "size": {"anyOf": [standard, custom]},
+                "size": size_schema(),
                 "orientation": {"type": "string", "enum": ["landscape", "portrait"]},
                 "dpi": {"type": "number", "minimum": *DPI_RANGE.start(), "maximum": *DPI_RANGE.end()}
             },
             "additionalProperties": false
         })
     }
+}
+
+/// A paper size as `SheetSize` reads it: `{"standard": "a3"}`, or `{"custom": {"sides_mm": [w, h]}}`.
+pub(super) fn size_schema() -> Value {
+    let papers: Vec<Value> = PaperSize::ALL.iter().filter_map(|p| serde_json::to_value(p).ok()).collect();
+    let sides = json!({"type": "array", "items": {"type": "number", "exclusiveMinimum": 0}, "minItems": 2, "maxItems": 2});
+    let standard = json!({"type": "object", "properties": {"standard": {"type": "string", "enum": papers}}, "required": ["standard"], "additionalProperties": false});
+    let custom = json!({
+        "type": "object",
+        "properties": {"custom": {"type": "object", "properties": {"sides_mm": sides}, "required": ["sides_mm"], "additionalProperties": false}},
+        "required": ["custom"],
+        "additionalProperties": false
+    });
+    json!({"anyOf": [standard, custom]})
 }
 
 /// A view's extents on its own plane, in model millimetres.

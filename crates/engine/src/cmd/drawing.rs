@@ -23,8 +23,8 @@ use crate::params::{bad, str_};
 use crate::schema::drawing::{
     BlockParam, CloseParams, CloseResult, CreateParams, DeleteParams, DeleteResult, ExcludedResult, InspectParams, InspectResult, ListParams,
     ListResult, ListedDrawing, OpenParams, OrientationResult, PropertiesParams, PropertiesRemoveParams, PropertiesRemoveResult, PropertiesResult,
-    PropertiesSetParams, PropertiesSetResult, SetParams, SheetComponentResult, SheetResult, SourceResult, TitleBlockResult, TitleBlockSetParams,
-    UnitsResult,
+    PropertiesSetParams, PropertiesSetResult, SetParams, SheetComponentResult, SheetResult, SheetSetParams, SourceResult, TitleBlockResult,
+    TitleBlockSetParams, UnitsResult,
 };
 use crate::schema::{TypedContract, output_schema_for};
 use crate::{Result, Session};
@@ -40,6 +40,7 @@ const PROPERTIES: TypedContract<PropertiesParams> = TypedContract::new();
 const PROPERTIES_SET: TypedContract<PropertiesSetParams> = TypedContract::new();
 const PROPERTIES_REMOVE: TypedContract<PropertiesRemoveParams> = TypedContract::new();
 const TITLE_BLOCK_SET: TypedContract<TitleBlockSetParams> = TypedContract::new();
+const SHEET_SET: TypedContract<SheetSetParams> = TypedContract::new();
 
 pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("drawing.create", "Create Drawing", crate::checked!("drawing.create", create))
@@ -133,6 +134,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         .output(output_schema_for::<InspectResult>)
         .params(
             "sheet?: the sheet's id (drawing.inspect; a drawing with one sheet may leave it out); block: \"built_in\" (SolidCraft's own 180 x 54 mm block, in the corner of the sheet's drawing border) or \"none\" → as drawing.inspect. The sheet keeps a copy, so a later built-in never changes it; a block that doesn't fit the sheet's border is refused. One undo step of the drawing.",
+        ),
+    CommandSpec::new("drawing.sheet.set", "Sheet Settings", crate::checked!("drawing.sheet.set", sheet_set))
+        .in_drawing()
+        .icon("settings")
+        .doc_only()
+        .contract(&SHEET_SET)
+        .output(output_schema_for::<InspectResult>)
+        .params(
+            "sheet?: the sheet's id (drawing.inspect; a drawing with one sheet may leave it out); name?; size?: {standard: a3} (a0 to a5, letter, legal, ansi_a to ansi_f, arch_a to arch_e, arch_e1) or {custom: {sides_mm: [w, h]}} (each side above 0, at most 5000 mm); orientation?: landscape|portrait; dpi?: 25 to 2400, for its pictures → as drawing.inspect. What isn't given stays as it is, and the border stays ISO 5457's. The views keep their places on the paper; one without a scale of its own is fitted again where it sits, so it may be out of date (drawing.status). A title block that no longer fits the drawing border is refused. One undo step of the drawing.",
         ),
 ];
 
@@ -320,6 +330,33 @@ fn title_block_set(s: &mut Session, p: &Value) -> Result<Value> {
             BlockParam::BuiltIn => Some(TitleBlock::built_in()),
             BlockParam::None => None,
         };
+        Ok(())
+    })?;
+    inspect(s, &Value::Null)
+}
+
+/// A sheet's name, paper and picture resolution, each kept unless given. The drawing's own rules
+/// judge the result ([`Session::edit_drawing`]): a name, a paper size, a resolution, and a title
+/// block that still fits the border.
+fn sheet_set(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "drawing.sheet.set";
+    let request: SheetSetParams = crate::schema::read(cmd, p)?;
+    s.edit_drawing(cmd, |d| {
+        let i = super::drawing_view::sheet_index(cmd, d, request.sheet.as_ref())?;
+        let sheet = d.sheets.get_mut(i).ok_or_else(|| bad(cmd, "the drawing has no such sheet"))?;
+        let sheet = Arc::make_mut(sheet);
+        if let Some(name) = &request.name {
+            sheet.name.clone_from(name);
+        }
+        if let Some(size) = request.size {
+            sheet.sheet.size = size.0;
+        }
+        if let Some(orientation) = request.orientation {
+            sheet.sheet.orientation = orientation.0;
+        }
+        if let Some(dpi) = request.dpi {
+            sheet.dpi = dpi;
+        }
         Ok(())
     })?;
     inspect(s, &Value::Null)

@@ -414,6 +414,9 @@ fn hostile_drawing_params_never_panic() {
         "clear",
         "block",
         "gap_mm",
+        "size",
+        "orientation",
+        "dpi",
     ];
     let skipped = |id: &str| matches!(id, "doc.open" | "file.save" | "file.save_as") || id.starts_with("doc.recover");
     let mut internal = Vec::new();

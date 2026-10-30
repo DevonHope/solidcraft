@@ -435,6 +435,32 @@ fn an_update_drawn_on_a_scratch_copy_is_the_sessions() {
     assert_eq!(worked_out(&s), before);
 }
 
+/// A new paper keeps a view drawn at a scale of its own current, and puts a fitted view out of date
+/// when fitting it again where it sits gives another scale: lines follow the scale, not the paper.
+#[test]
+fn a_new_paper_puts_only_the_views_it_refits_out_of_date() {
+    let mut s = drawn();
+    let fitted = run(&mut s, "drawing.view.base", json!({"view": "front", "position_mm": [210, 148.5]}))["view"]["id"].clone();
+    let fixed = json!({"view": "top", "position_mm": [100, 60], "style": {"scale": "1:1"}});
+    let fixed = run(&mut s, "drawing.view.base", fixed)["view"]["id"].clone();
+    let before = run(&mut s, "drawing.update", json!({}));
+    let scale_of = |reply: &Value, id: &Value| {
+        let views = reply["sheets"][0]["views"].as_array().cloned().unwrap_or_default();
+        views.into_iter().find(|view| view["id"] == *id).map(|view| view["scale"]["text"].clone())
+    };
+    // On A3 the fitted front view has room for 2:1 about the sheet's centre; on A4 that point is
+    // near the right and top edges, so it fits again at 1:1.
+    run(&mut s, "drawing.sheet.set", json!({"size": {"standard": "a4"}}));
+    let status = statuses(&mut s);
+    let key = |id: &Value| id.as_str().map(str::to_string).unwrap_or_default();
+    assert_eq!(status.get(&key(&fixed)).map(String::as_str), Some("current"), "{status:?}");
+    assert_eq!(status.get(&key(&fitted)).map(String::as_str), Some("out_of_date"), "{status:?}");
+    let after = run(&mut s, "drawing.update", json!({}));
+    assert_eq!((after["drawn"].clone(), after["kept"].clone()), (json!(1), json!(1)));
+    assert_ne!(scale_of(&after, &fitted), scale_of(&before, &fitted), "the fit changed the scale");
+    assert_eq!(scale_of(&after, &fixed), Some(json!("1:1")));
+}
+
 /// An update changes nothing in the design: no undo step, nothing to save.
 #[test]
 fn an_update_is_no_edit_of_the_drawing() {
