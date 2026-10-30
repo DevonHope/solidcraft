@@ -22,7 +22,7 @@ Times in the log are local time on the machine that did the work, with the UTC o
 | **Branch** | `beta/drawings`, built on **0e3074ac** (2026-10-28's last commit). What is on it since, and which of those are on the fork, is `git log --oneline 0e3074ac..HEAD` and `git log --oneline origin/beta/drawings..HEAD` — this row named SHAs twice and counted commits once, and went stale all three times. Every merged SHA is in [BETA-BASE.md](BETA-BASE.md). |
 | **Working tree** | Clean, with no merge in progress. |
 | **Pushed?** | The fork's branch is `origin/beta/drawings`, and **`git log --oneline origin/beta/drawings..HEAD` is the only honest answer** to what is still local — this row has gone stale twice by trying to say it in words. Every push so far went up with the owner's explicit OK. Another machine gets what is there with `git pull --ff-only` (§3). **Agents: confirm with the owner before each later push.** |
-| **Phase** | **Phase 2 of 6 (headless drawing core): done** on 2026-10-29, with all nine items in: exact view basis, view lines, standard layout, the paper scene builder, the drawing session, Records (but for the `dimensions` and `notes` lists, which moved to Phase 3), the view commands (`drawing.sheet.set` last, on the laptop), Freshness and Update (`drawing.update`, `drawing.status`; running it on the app's file worker moved to Phase 5), and the SVG export. Its done-when is met but for byte-identical files from two *drawings* of one part, which waits on the paint-order decision ([§8.2](#82-phases-26-full-task-lists)). **`upstream/main` is merged up to 313d2bdb** (71de74c7, [§6.10](#610-merge-upstream-main-again--done-71de74c7-2026-10-29)). |
+| **Phase** | **Phase 2 of 6 (headless drawing core): done** on 2026-10-29, with all nine items in: exact view basis, view lines, standard layout, the paper scene builder, the drawing session, Records (but for the `dimensions` and `notes` lists, which moved to Phase 3), the view commands (`drawing.sheet.set` last, on the laptop), Freshness and Update (`drawing.update`, `drawing.status`; running it on the app's file worker moved to Phase 5), and the SVG export. Its done-when is met but for byte-identical files from two *drawings* of one part, which waits on the paint-order decision ([§8.2](#82-phases-26-full-task-lists)). **`upstream/main` is merged up to 313d2bdb** (1c328d0e, finished by 71de74c7; [§6.10](#610-merge-upstream-main-again--done-1c328d0e-and-71de74c7-2026-10-29)). |
 | **Running** | Nothing. |
 | **Last measured** | The chamfer case in [§8.6](#86-known-problems-and-fixes), 2026-10-28 on the Mac: the kernel's cost, and a test proving OK reuses the preview's evaluation. The report and its scripts are written and **not posted**. |
 | **Next action** | **Phase 3: text, notes and dimensions** ([§8.2](#82-phases-26-full-task-lists)). Its first item is **text in the paper scene** (`Item::Text`, laid out with `sketch::TextMetrics` and drawn as Liberation Sans outlines, D3), then the title block's fields, notes, and dimensions. **Settle the owner's decisions first** (Blockers below): the paint order shapes where notes and dimensions sit in the record. The laptop's gate stays as §5 says: 4 jobs, 2 test threads, `RAYON_NUM_THREADS=2`, engine tests with `--lib`, every filter counted before it runs, and `schema::` beside `drawing`. |
@@ -500,7 +500,13 @@ The owner chose to finish Phase 1 first, then merge `main`. Measured with `git m
 `format` tests; engine `--lib` `drawing`, `schema::` and `edit`; then `cargo build -p solidcraft`
 and a short launch.
 
-### 6.10 Merge upstream `main` again — done, 71de74c7 (2026-10-29)
+### 6.10 Merge upstream `main` again — done, 1c328d0e and 71de74c7 (2026-10-29)
+
+**Two commits, not one.** The merge commit is **1c328d0e** (git's default message): the staged
+resolution was committed and pushed to the fork from the laptop at 21:36, mid-way, and not by the
+agent. It holds every resolution below but the `doc/metadata.rs` and `engine/cmd/bom.rs` row, so
+on its own one bill-of-materials test fails. **71de74c7** is the follow-up with those two files,
+and its message records the whole resolution.
 
 The owner chose "Merge main first", before `drawing.sheet.set`. `upstream/main` **313d2bdb** was
 424 commits past 51f0c2d0's merge. **Among them is #8249 (9bcb2ffe, 2026-10-28), "Drawings: first
@@ -910,7 +916,12 @@ Nothing is running.
   didn't, so upstream's `doc/metadata.rs` and `cmd/bom.rs` were taken. Then #3891's drawing test
   expected a design's refusal to name `component.metadata.set`, so that one line of ours went back
   in. Each round was one doc build plus one engine build, about 15 minutes.
-- **22:17: committed the merge** as **71de74c7**. Nothing of `main`'s outside the landing was lost
+- **21:36: the merge was committed and pushed mid-way, not by the agent.** The reflog shows the
+  staged resolution committed as **1c328d0e** with git's default merge message at 21:36:29, and
+  pushed to the fork at 21:36:53, from this machine: most likely the app's Commit and Push. It
+  held everything but the two files the next point fixed.
+- **22:17: the follow-up** as **71de74c7**: `doc/metadata.rs` and `engine/cmd/bom.rs`. It was
+  meant as the merge commit, so its message describes the whole merge. Nothing of `main`'s outside the landing was lost
   (the line check), and nine crates type-check with no warnings.
 - **Then `drawing.sheet.set`**, with its schema, label and tests (§8.2's note). One strict-mode
   pair failed only on a random sheet id inside the message; those two cases are now the behaviour
@@ -918,9 +929,9 @@ Nothing is running.
 - **Timing on the laptop:** the first test build after the merge was 18 minutes for four crates;
   later engine rebuilds were 4 to 13 minutes.
 
-**State left:** Phase 2 is done and `main` is merged. The branch is the merge, the
-`drawing.sheet.set` commit and these notes; `git log --oneline origin/beta/drawings..HEAD` shows
-what isn't on the fork yet (all of it, until the owner OKs a push). Nothing is running.
+**State left:** Phase 2 is done and `main` is merged. The fork has 1c328d0e; the follow-up, the
+`drawing.sheet.set` commit and these notes are local until the owner OKs a push (`git log
+--oneline origin/beta/drawings..HEAD`). Nothing is running.
 
 ---
 
